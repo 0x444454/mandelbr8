@@ -57,7 +57,8 @@ The first pass is low-resolution and serves two purposes:
 - Quick preview of rendered image.
 - Buffer iterations for second pass optimization.
 
-The second pass is high resolution. Each low-resolution pixel in the first pass is either skipped (based on lo-res boundaries) or treated as a tile composed of high-resolution pixels which are calculated and then rendered.
+The second pass is high resolution (well, for an 8-bit machine ;-).  
+Each low-resolution pixel in the first pass is either skipped (based on lo-res boundaries) or treated as a tile composed of high-resolution pixels which are calculated and then rendered.
 The number of tile pixels varies depending on the high-res video mode. In Commodore multicolor bitmap mode, each tile is composed by 4x8 double-width pixels.
 
 ### Hi-res tile color clash optimization
