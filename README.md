@@ -30,7 +30,8 @@ Note: Zooming in over the precision limit can cause a solid color screen to be r
 
 ### C128 80 column mode:
 - First pass: 80x50, 16 colors
-- Second pass: [not yet supported]
+- Second pass: [not yet supported]. 
+Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
 
 # ALGORITHM
 
