@@ -7,7 +7,7 @@
 ;   2024-11-07: First simple test loop. [DDT]
 ;   2024-11-08: Unoptimized C64 version. [DDT]
 ;   2024-11-09: Added support for C128 and 80x50 VDC mode. [DDT]
-;   2024-11-10: Added Q9.10 squares table for speedup. [DDT]
+;   2024-11-10: Added Q5.9 squares table for speedup. [DDT]
 ;   2024-11-12: VIC-II Kawari: Support HW multiplier. [DDT]
 ;   2024-11-13: Support Commodore Plus/4. [DDT]
 ;   2024-11-15: Support C64 multicolor bitmap (second-pass). [DDT]
