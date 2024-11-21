@@ -30,6 +30,6 @@ Please add a link to this github project.
 
 # THIRD-PARTY CODE
 
-This program uses the ```smult16.a``` code from:
+This program uses the ```smult16.a``` fast 6502 multiplication algorithm from:
 https://github.com/TobyLobster/multiply_test
 
