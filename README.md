@@ -24,13 +24,17 @@ Actions:
 Note: Zooming in over the precision limit can cause a solid color screen to be rendered. In that case, zoom out until you see the image rendered correctly again.
 
 # SUPPORTED RESOLUTIONS
+
 ### C64, C128 40 column mode, TED machines
 - First pass: 40x25, 16 colors
 - Second pass: 160x200, 16 colors (multicolor bitmap)
 
+Note: Kawari 320x200 high resolution is not yet supported (work in progress).
+
 ### C128 80 column mode:
 - First pass: 80x50, 16 colors
-- Second pass: [not yet supported].  
+- Second pass: [not yet supported].
+
 Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
 
 # ALGORITHM
