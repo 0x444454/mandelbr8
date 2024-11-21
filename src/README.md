@@ -27,3 +27,9 @@ Creative Commons, CC BY
 https://creativecommons.org/licenses/by/4.0/deed.en
 
 Please add a link to this github project.
+
+# THIRD-PARTY CODE
+
+This program uses the ```smult16.a``` code from:
+https://github.com/TobyLobster/multiply_test
+
