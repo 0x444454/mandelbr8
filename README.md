@@ -24,26 +24,47 @@ Actions:
 Note: Zooming in over the precision limit can cause a solid color screen to be rendered. In that case, zoom out until you see the image rendered correctly again.
 
 # SUPPORTED RESOLUTIONS
-##C64, C128 40 column mode
+### C64, C128 40 column mode, TED machines
 - First pass: 40x25, 16 colors
 - Second pass: 160x200, 16 colors (multicolor bitmap)
 
-##C128 80 column mode:
+### C128 80 column mode:
 - First pass: 80x50, 16 colors
 - Second pass: [not yet supported]
 
 # ALGORITHM
 
+### Mandelbrot calculation
 [TBD]
+If the Kawari chip is present, we use its hardware acceleration for 16x16 bit signed multiplication, which reduces calculation times by about 25%.
+
 The rendering is done in two passes.
 
 The first pass is low-resolution and serves two purposes:
 - Quick preview of rendered image.
 - Buffer iterations for second pass optimization.
 
-The second pass is high resolution. Each low-resolution pixel in the first pass is either skipped (based on boundaries check) or treated as a tile composed of high-resolution pixels.  
+The second pass is high resolution. Each low-resolution pixel in the first pass is either skipped (based on lo-res boundaries) or treated as a tile composed of high-resolution pixels which are calculated and then rendered.
 The number of tile pixels varies depending on the high-res video mode. In Commodore multicolor bitmap mode, each tile is composed by 4x8 double-width pixels.
 
+### Hi-res tile rendering
+
+Most 8 bit machines have limitations on the number of colors that can be used in a 8x8 or 4x8 block.  
+
+The VIC-II chip in the C64 and C128 only allows 4 colors for each 4x8 block in multicolor bitmap mode:
+- 1 common background color, shared by all blocks. We use black (Mandelbrot set color).
+- 3 custom colors.
+- Each color is selected from a fixed palette of 16 colors. If the Kawari version of the VIC-II is found, we redefine the palette with a nicer gradient.
+
+The TED chip in the Plus/4 and C16 also allows only 4 colors for each 4x8 block in multicolor bitmap mode, but with further restrictions:
+- 2 common background colors, shared by all blocks. We use Black (Mandelbrot set color) and Light Gray.
+- 2 custom colors chosen from a fixed palette of 121 colors.
+We use pastel colors on the TED and use Light Gray as the second shared color to minimize the visibility of color errors.
+
+After calculating all colors in the 4x8 tile, we create a color histogram and assign block colors based on the most used ones.  
+Depending on the tile, some color artifacts might noticeable.
+
+Note: The Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported.
 
 # LICENSE
 
