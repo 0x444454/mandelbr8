@@ -59,7 +59,7 @@ The first pass is low-resolution and serves two purposes:
 The second pass is high resolution. Each low-resolution pixel in the first pass is either skipped (based on lo-res boundaries) or treated as a tile composed of high-resolution pixels which are calculated and then rendered.
 The number of tile pixels varies depending on the high-res video mode. In Commodore multicolor bitmap mode, each tile is composed by 4x8 double-width pixels.
 
-### Hi-res tile rendering
+### Hi-res tile color clash optimization
 
 Most 8 bit machines have limitations on the number of colors that can be used in a 8x8 or 4x8 block.  
 
