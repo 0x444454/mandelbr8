@@ -5,12 +5,13 @@ A single source file is used for all machines.
 Open the ```mandelbr8.asm``` file. At the beginning, you will find the following lines:
 
 ```asm
-; Enable *only* the build you need (set to 1).
-BUILD_C64 =  1 ; Commodore 64 (or C128 in C64 mode).
+; Enable only the build you need (set to 1).
+BUILD_C64  = 1 ; Commodore 64 (or C128 in C64 mode).
 BUILD_C128 = 0 ; Commodore 128
 BUILD_TED  = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 ```
 
+Enable **only** one build at a time.
 
 # BUILD THE BINARY
 
