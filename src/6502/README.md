@@ -1,4 +1,4 @@
-A single source file is used for all machines.
+A single source file is used for all 6502-based machines.
 
 # SELECT THE TARGET MACHINE
 
