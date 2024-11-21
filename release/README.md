@@ -1,6 +1,6 @@
 # BINARIES ARE HERE
 
-Pick the release based on your target machine.
+Pick the binary for your target machine.
 
 # LICENSE
 
