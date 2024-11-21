@@ -19,7 +19,13 @@ Build with TASS:
 
 ```64tass -o "mandelbr8.prg" -L "mandelbr8.lst" -a "mandelbr8.asm"```
 
-Replace your C64 ROM with the one you just programmed.
+# LOAD AND RUN
+
+### Commodore machines:
+```
+LOAD"mandelbr8",8,1
+RUN
+```
 
 # LICENSE
 
