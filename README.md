@@ -74,9 +74,9 @@ The TED chip in the Plus/4 and C16 also allows only 4 colors for each 4x8 block 
 We use pastel colors on the TED and use Light Gray as the second shared color to minimize the visibility of color errors.
 
 After calculating all colors in the 4x8 tile, we create a color histogram and assign block colors based on the most used ones.  
-Depending on the tile, some color artifacts might noticeable.
+Depending on the tile location in the complex plane, some color artifacts might still be noticeable.
 
-Note: The Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported.
+Note: The Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported (WIP).
 
 # LICENSE
 
