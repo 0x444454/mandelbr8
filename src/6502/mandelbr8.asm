@@ -1880,7 +1880,7 @@ prev_timer:
 ;   ay : New upper-left y coord bnased on current incy
 
 recenter:
-        ; Calculate current imaginary plane width.
+        ; Calculate current complex plane width.
         LDA screenw
         STA x0
         LDA screenw+1
@@ -1894,7 +1894,7 @@ recenter:
         STA pw_cur
         LDA z1
         STA pw_cur+1
-        ; Calculate previous imaginary plane width.
+        ; Calculate previous complex plane width.
         LDA incx_lr_prev
         STA y0
         LDA incx_lr_prev+1
@@ -1905,7 +1905,7 @@ recenter:
         LDA z1
         STA pw_prev+1
         
-        ; Calculate current imaginary plane height.
+        ; Calculate current complex plane height.
         LDA screenh
         STA x0
         LDA screenh+1
@@ -1919,7 +1919,7 @@ recenter:
         STA ph_cur
         LDA z1
         STA ph_cur+1
-        ; Calculate previous imaginary plane height.
+        ; Calculate previous complex plane height.
         LDA incy_lr_prev
         STA y0
         LDA incy_lr_prev+1
