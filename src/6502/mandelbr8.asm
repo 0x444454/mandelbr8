@@ -142,7 +142,7 @@ no_kawari:
         AND #$F8
         ORA #$05
         STA $01
-.endif ;BUILD_C128
+.endif ;BUILD_C64
         
 
 .if BUILD_C128
