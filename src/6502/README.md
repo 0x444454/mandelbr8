@@ -6,18 +6,27 @@ Open the ```mandelbr8.asm``` file. At the beginning, you will find the following
 
 ```asm
 ; Enable only the build you need (set to 1).
-BUILD_C64  = 1 ; Commodore 64 (or C128 in C64 mode).
-BUILD_C128 = 0 ; Commodore 128
-BUILD_TED  = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
+BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
+BUILD_C128  = 0 ; Commodore 128
+BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
+BUILD_ATARI = 0 ; Atari XL/XE (64 KB required).
 ```
 
 Enable **only** one build at a time.
 
 # BUILD THE BINARY
 
+### Commodore machines:
+
 Build with TASS:
 
 ```64tass -o "mandelbr8.prg" -L "mandelbr8.lst" -a "mandelbr8.asm"```
+
+### Atari machines:
+
+Build with TASS:
+
+```64tass --output-exec=main --atari-xex -o "mandelbr8.xex" -L "mandelbr8.lst" -a "mandelbr8.asm"```
 
 # LOAD AND RUN
 
@@ -26,6 +35,9 @@ Build with TASS:
 LOAD"mandelbr8",8,1
 RUN
 ```
+
+### Atari machines:
+Run the XEX file.
 
 # LICENSE
 
