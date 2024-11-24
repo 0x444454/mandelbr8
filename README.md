@@ -4,9 +4,10 @@ Currently supported:
 - Commodore 64 (with or without Kawari acceleration).
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
+- Atari XL/XE (64 KB).
 - [more 8 bit machines in the future]
 
-![screenshots](media/mandel8-20241120.jpg)
+![screenshots](media/mandel8-20241123.jpg)
 
 # CONTROLS
 
@@ -36,6 +37,12 @@ Note: Kawari 320x200 high resolution is not yet supported (work in progress).
 - Second pass: [not yet supported].
 
 Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
+
+### ATARI XL/XE:
+- First pass: 40x25, 16 shades of gray
+- Second pass: 80x200, 16 shades of gray
+
+Note: This uses ANTIC mode F.1 (GTIA 16 luma mode).
 
 # ALGORITHM
 
