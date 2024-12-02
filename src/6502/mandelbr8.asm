@@ -16,6 +16,9 @@
 ;   2024-11-18: Support TED multicolor bitmap (second-pass). [DDT]
 ;   2024-11-20: Support Kawari custom palette. [DDT]
 ;   2024-11-23: Support Atari XL/XE. [DDT]
+;   2024-11-27: Studied BBC Micro system arch. [DDT]
+;   2024-11-28: Support BBC Micro. [DDT]
+;   2024-12-02: Minor bugs fixed. [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
@@ -24,7 +27,9 @@ BUILD_C128  = 0 ; Commodore 128
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_PET   = 0 ; WARNING: Commodore PET machines ARE NOT YET SUPPORTED !!!.
 BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
+BUILD_BEEB  = 0 ; BBC Micro.
 
+; BEGIN: Commodore machines -----------------
 .if BUILD_C64
   * = $0801   ; C64
 .elif BUILD_C128
@@ -35,30 +40,214 @@ BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
   * = $401    ; PET.
 .elif BUILD_ATARI
   * = $1800   ; Atari XL/XE
+.elif BUILD_BEEB
+  LOAD_ADDRESS = $1800   ; BBC Micro
 .endif
   
 .if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
   .word end_BASIC
   .word 10
   .byte $9e ; SYS
-.endif  
 
-.if BUILD_C64  
-  .text "2061", $00 ; C64
-.elif BUILD_C128
-  .text "7181", $00 ; C128
-.elif BUILD_TED
-  .text "4109", $00 ; TED
-.elif BUILD_PET
-  .text "1037", $00 ; PET
-.endif
+  .if BUILD_C64  
+    .text "2061", $00 ; C64
+  .elif BUILD_C128
+    .text "7181", $00 ; C128
+  .elif BUILD_TED
+    .text "4109", $00 ; TED
+  .elif BUILD_PET
+    .text "1037", $00 ; PET
+  .endif
 
 end_BASIC:
   .word 0
+.endif
+; END: Commodore machines -----------------
+
+
+; BEGIN: BBC Micro -----------------
+.if BUILD_BEEB
+        ; We generate a SSD file, i.e. a floppy disk containing this program.
+        ;
+        ; Create SSD disk header.
+        ;
+        * = LOAD_ADDRESS - $200 ;--------- SECTOR 0
+        ;
+        .text "mandelbr"   ; First 8 chars of disk title.
+        ;    First file name and "Dir" attributes.
+        .text "!boot  ", $24
+
+        * = LOAD_ADDRESS - $100 ;--------- SECTOR 1
+        .text "8   "    ; Last 4 chars of tisk title.
+        .byte $07       ; Disk cycle, HDFS: Key number.
+        .byte 1*8       ; (Number of catalog entries) * 8
+        .byte %00100011 ; [7..6]: Must be zero.
+                        ; [5..4]: !Boot option (*OPT 4 value). We use %10 to run machine code.
+                        ; [3]: 0=DFS/WDFS, 1=HDFS
+                        ; [2]: Total number of sectors [10]. If HDFS: (number of sides)-1
+                        ; [1..0]: Total number of sectors [9..8].
+        .byte ((END_ADDRESS - LOAD_ADDRESS)+255)/256 + 2 ; Total number of sectors [7..0].
+        ;   First file properties.
+        .byte <LOAD_ADDRESS, >LOAD_ADDRESS ; Load address [15..0].
+        .byte <LOAD_ADDRESS, >LOAD_ADDRESS ; Exec address [15..0].
+        .word END_ADDRESS - LOAD_ADDRESS   ; File length  [15..0].
+        .byte %00000000 ; [7..6] Exec address [17..16].
+                        ; [5..4] File length  [17..16].
+                        ; [3..2] Load address [17..16].
+                        ; [1..0] Start sector [9..8]
+        .byte $02       ;        Start sector [7..0].
+
+        * = LOAD_ADDRESS
+.endif
+; END: BBC Micro -----------------
+
         
 main:
         ; Disable interrupts.
         SEI
+
+
+.if BUILD_BEEB
+        LDA #MODE_BEEB
+        STA mode
+        
+        ; Mute that nasty startup beep.
+        LDA #$00
+        JSR set_volumes
+
+        ; Configure System VIA Port A to read keyboard.
+        LDA #$0F
+        STA $FE42
+        LDA #$03
+        STA $FE40
+        
+        ; Set ULA palette for mode 2.
+        ; Write the logical color to the top four bits, and the physical color EOR 7 in the bottom four bits.
+        LDX #0
+-       TXA
+        EOR #$07
+        STA ula_tmp
+        TXA
+        ROL
+        ROL
+        ROL
+        ROL
+        ORA ula_tmp
+        STA $FE21     ; Palette Control (%ccccfbgr).
+        INX
+        CPX #16
+        BNE -
+
+        ; Border color / 24-bit palette control:
+        ;   %0000xbgr - border colour
+        ;   %01xxxxxx - palette control
+        ;   %1xxxxxxx - palette control
+        LDA #%00000000  ; Black.
+        STA $FE22  ; Border color.
+        
+        
+        ; Set Mode 2 (BITMAP_START = $3000).
+        LDA #12    ; Set C0=1
+        STA $FE40  ; VIA Reg B
+        LDA #13    ; Set C1=1
+        STA $FE40  ; VIA Reg B
+        
+        ; Setup the 6845 (CRTC).
+        LDX #0
+-       STX $FE00
+        LDA crtc_mode_2,X
+        STA $FE01
+        INX
+        CPX #18
+        BNE -
+
+        ; Setup Video Control register. For whatever reason, this must be done after setting up the CRTC.
+        LDA #$F4   ; Mode 2 with no cursor. NOTE: setting bits 5,6 and 7 to 0 will cause the cursor to vanish.
+        STA $FE20  ; Video Control.
+
+        
+        ; Draw test bitmap pattern.
+        LDX #$00
+-       TXA
+        ;LDA #$FF
+        STA BITMAP_START,X
+        INX
+        BNE -
+
+;j: jmp j
+;  RTS
+        JMP done_BEEB
+        
+
+ula_tmp:    .byte   0  
+
+; 6845 (CRTC) settings.
+crtc_mode_2:
+    .byte   127 ; R0        Horizontal total. The total number of 'character time units' across the screen - 1 (including non-displayed characters).
+    .byte    80 ; R1        Characters per line. 
+    .byte    98 ; R2        Horizontal sync position. Changing this moves the screen left/right.
+    .byte   $28 ; R3        Vertical sync width [7..4], Horizontal sync width [3..0]. NOTE: Not advisable to change since most TVs/monitors require the standard values.
+    .byte    38 ; R4        Vertical total (char rows).
+    .byte     0 ; R5        Vertical total adjust (scan lines).
+    .byte    32 ; R6        Vertical displayed (char rows).
+    .byte    34 ; R7        Vertical sync position (char rows).
+    .byte   $00 ; R8        Cursor delay (chars) [7..6], Display delay (chars) [5..4], Interlace mode [1..0]: %00 or %10 = non interlaced; %01 = interlaced; %11 = interlace and video for MODE 7 support.
+    .byte     7 ; R9        Scan lines per character - 1.
+    .byte   $67 ; R10       Cursor blink [6], Blink rate [5], Cursor start (scan line) [4..0].
+    .byte     8 ; R11       Cursor end (scan line).
+    .byte >(BITMAP_START/8); R12       Screen start address / 8, HI.
+    .byte <(BITMAP_START/8); R13       Screen start address / 8, LO.
+    .byte   $00 ; R14       Cursor position, HI.
+    .byte   $00 ; R15       Cursor position, LO.
+    .byte     0 ; R16       Light pen position, HI.
+    .byte     0 ; R17       Light pen position, HLO.
+
+; Table to convert a color index [0..15] into a byte representing 2 pixels of the same color (Mode 2).
+mode2_solid_colors:
+    .byte %00000000, %00000011, %00001100, %00001111
+    .byte %00110000, %00110011, %00111100, %00111111
+    .byte %11000000, %11000011, %11001100, %11001111
+    .byte %11110000, %11110011, %11111100, %11111111
+
+; This is the current BBC Micro joystick poll axis.
+beeb_joy_dir_axis:  .byte $00
+beeb_joy_last_x:    .byte 128     ; [0..255]. Default to centered.
+beeb_joy_last_y:    .byte 128     ; [0..255]. Default to centered.
+  
+; Set volume in A to sound chip.
+set_volumes:
+        EOR #$0F    ; SN76489 takes a negative volume level
+        PHA
+        ORA #$D0    ; command: set volume of Channel 2
+        JSR snd_sound_cmd
+        PLA
+        PHA
+        ORA #$90    ; command: set volume of Channel 0
+        JSR snd_sound_cmd
+        PLA
+        ORA #$B0    ; command: set volume of Channel 1
+        JSR snd_sound_cmd
+        RTS  
+  
+; Send command in A to sound chip.  
+snd_sound_cmd:  
+        LDX #$FF
+        STX $FE43  ; System VIA Port A: Set all lines as output.
+        STA $FE4F  ; System VIA Port A: Output A (no handshake).
+        INX        ; X=0 (Enable sound chip).
+        STX $FE40  ; System VIA Port B, assert sound chip write strobe.
+        NOP        ; Wait for sound chip to process command...
+        NOP
+        NOP
+        NOP
+        LDX #8     ; X=8 (Disable sound chip).
+        STX $FE40  ; System VIA Port B, negate sound chip write strobe.
+        RTS
+    
+done_BEEB:    
+.endif ; BUILD_BEEB
+
+
         
 .if BUILD_C128
         ; Configure C128 MMU. Kick ROM out of the way.
@@ -195,12 +384,14 @@ done_expansion:
         ; Initialize unsigned mul tables. This is required also by "print_str", so do it now.
         JSR mulu_init 
 
+.if !BUILD_BEEB
         ; Print intro message (first message printed must start with $93=CLS).
         LDA #<str_intro
         STA str_ptr
         LDA #>str_intro
         STA str_ptr+1
         JSR print_str
+.endif        
       
         ; Check machine.
 
@@ -423,7 +614,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2024-11-23", $0D
+        .text "version 2024-12-02", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -484,6 +675,8 @@ atari_IRQ:
   COL_RAM      = $D800
   COL_BORDER   = $D020
   COL_BGND     = $D021
+  LORES_W      = 40
+  LORES_H      = 25
   HIRES_W      = 160
   HIRES_H      = 200
   HIRES_TILE_W = 4
@@ -494,6 +687,8 @@ atari_IRQ:
   COL_RAM      = $D800
   COL_BORDER   = $D020
   COL_BGND     = $D021
+  LORES_W      = 40
+  LORES_H      = 25
   HIRES_W      = 160
   HIRES_H      = 200
   HIRES_TILE_W = 4
@@ -504,6 +699,8 @@ atari_IRQ:
   COL_RAM      = $0800 ; Attributes matrix
   COL_BORDER   = $FF19
   COL_BGND     = $FF15 ; Background register #0
+  LORES_W      = 40
+  LORES_H      = 25
   HIRES_W      = 160
   HIRES_H      = 200
   HIRES_TILE_W = 4
@@ -514,6 +711,8 @@ atari_IRQ:
   COL_RAM      = 0     ; No color RAM. Unfortunately, TASS64 has no .ifdef.
   COL_BORDER   = $FFFF ; Dummy.
   COL_BGND     = $FFFF ; Dummy.
+  LORES_W      = 40
+  LORES_H      = 25
   HIRES_W      = 160
   HIRES_H      = 200
   HIRES_TILE_W = 4
@@ -524,11 +723,25 @@ atari_IRQ:
   COL_RAM      = $0400 ; ?
   COL_BORDER   = $D01A ; COLBK (border is same as background).
   COL_BGND     = $D01A ; ?
+  LORES_W      = 40
+  LORES_H      = 25
   HIRES_W      = 80
   HIRES_H      = 200
   HIRES_TILE_W = 2
   HIRES_TILE_H = 8
-  BITMAP_START = $2060 ; Bitmap starts at $2060 to allow hitting $3000 exactly at the middle of the screen (ANTIC 4KB limitation). 
+  BITMAP_START = $2060 ; Bitmap starts at $2060 to allow hitting $3000 exactly in the middle of the screen (ANTIC 4KB limitation). 
+.elif BUILD_BEEB
+  SCR_RAM      = $3000 ; Video matrix (this is actually a MODE 2: bitmap).
+  COL_RAM      = $3000 ; No color RAM. Unfortunately, TASS64 has no .ifdef.
+  COL_BORDER   = $FFFF ; Dummy.
+  COL_BGND     = $FFFF ; Dummy.
+  LORES_W      = 40
+  LORES_H      = 32
+  HIRES_W      = 160
+  HIRES_H      = 255
+  HIRES_TILE_W = 4
+  HIRES_TILE_H = 8
+  BITMAP_START = $3000
 .endif
 
 
@@ -536,6 +749,7 @@ atari_IRQ:
 MODE_VIC2     =   $01
 MODE_KAWARI   =   $02
 MODE_VDC      =   $04
+MODE_BEEB     =   $08
 
 mode:    .byte MODE_VIC2 ; Default to VIC-II mode.
 res:     .byte 0         ; 0 if text/lo-res, 1 if hi-res. Default to text/lo-res.
@@ -689,6 +903,24 @@ cursor_y:   .byte 0
 
 ;------------- clear screen -------------
 clear_screen:
+.if BUILD_BEEB
+        ; Just clear the entire bitmap: $3000..$7FFF
+        LDA #$00
+        STA bmp_ptr
+        LDA #$30
+        STA bmp_ptr+1
+        LDY #0
+nxt_page:
+        LDA #$00
+-       STA (bmp_ptr),Y
+        INY
+        BNE -
+        INC bmp_ptr+1
+        LDA bmp_ptr+1
+        CMP #$80
+        BNE nxt_page
+        RTS
+.endif
         LDA mode
         AND #MODE_VIC2 | MODE_KAWARI
         BEQ +
@@ -721,15 +953,19 @@ clear_screen:
 .endif        
         RTS
 +   
+
+.if BUILD_C128
         LDA mode
         AND #MODE_VDC
         BEQ +
         JSR vdc_cls
         RTS
 +   
-    
+.endif
+   
         RTS
     
+.if BUILD_C128    
 ;------------- VDC reg read -------------
 ; Inputs
 ;   X: Register number
@@ -795,6 +1031,7 @@ vdc_cls:
         BNE -
     
         RTS               ; Return
+.endif ; BUILD_C128
 
 ;------------- Switch lo/hi res -------------
 ; Note: Not all platforms support switching.
@@ -877,8 +1114,6 @@ chk_KAWARI_res:
         LDA #1          ; Return OK
         JMP end_applymode
 +       ; TED hi-res (bitmap multicolor: 2 diff colors per 4x8 cell + 2 background colors (#0, #1).
-;    LDA #$00
-;    RTS ; Not yet supported.
         JSR clear_bitmap
         ; Copy colors for multicolor %10 to video matrix and set luma to 6 for all others.
         LDX #$00
@@ -1017,6 +1252,17 @@ switch_display_list:
         LDA #$22            ; Disable display list DMA.
         STA $D400           ; DMACTL
         LDA #1              ; Return OK
+        JMP end_applymode
+.elif BUILD_BEEB
+        ; BBC Micro.
+        ; Not much to do here, as we run the Beeb always in bitmap mode.
+        ; Reset bitmap pointers.
+        LDA #$00
+        STA bmp_ptr
+        LDA #$30
+        STA bmp_ptr+1
+        ; Return OK
+        LDA #1
         JMP end_applymode
 .else
         ; Unhandled mode.
@@ -1301,12 +1547,92 @@ nxt_tile_line_A:
         STA bmp_ptr
         JSR bmp_to_next_tile
         RTS
-   
 .endif
 
+.if BUILD_BEEB
+;------------- Render tile (BBC Micro version) -------------
+; Render a hi-res tile in Mode 2.
+; We use a 4x8 tile format.
+; The BBC Micro uses 8 colors per pixel, plus a useless flash attribute.
+; Each byte encodes 2 horizontal pixels (fbgr and FBGR) in bit-interleaved format: fFbBgGrR.
+; For each 4x8 cell, bytes are rendered on screen like this ("byte_offset=format"):
+;   00=fFbBgGrR  08=fFbBgGrR
+;   01=fFbBgGrR  09=fFbBgGrR
+;   02=fFbBgGrR  0a=fFbBgGrR
+;   03=fFbBgGrR  0b=fFbBgGrR
+;   04=fFbBgGrR  0c=fFbBgGrR
+;   05=fFbBgGrR  0d=fFbBgGrR
+;   06=fFbBgGrR  0e=fFbBgGrR
+;   07=fFbBgGrR  0f=fFbBgGrR
+;
+; Our algorithm renders two half-tiles (first 2x8 left, and then 2x8 right).
+;
+render_tile_BEEB:
+        ; Simply use the 4x8 iters buffer as colors (Mod8).
+        ; bmp_ptr contains the current half-tile bitmap byte (2 pixels, 4 bits each).
+        ; buf_it_ptr is the per-pixel iterations buffer.
+        
+        LDA #<buf_iters_hr
+        STA buf_it_ptr
+        LDA #>buf_iters_hr
+        STA buf_it_ptr+1
+        LDA #2
+        STA halves_countdown     ; Tile halves countdown (2 halves).
+        LDY #0                   ; Current tile pixel in iters buffer [0..32].
+nxt_halftile_BEEB:      
+        LDA #8
+        STA line_countdown       ; Tile line countdown.
+nxt_tile_byte_BEEB:
+        ; Each bitmap byte contains 2 pixels (left and right).
+        ; Alas, color bits are interleaved, so we use a table to interleave them.
+        LDA (buf_it_ptr),Y          ; Get left pixel.
+        AND #$07                    ; Only 8 colors available.
+        INY
+        TAX
+        LDA mode2_solid_colors,X    ; Convert left-pixel to interleaved using table.
+        AND #$AA
+        STA tmp_conv
+        LDA (buf_it_ptr),Y          ; Get right pixel.
+        AND #$07                    ; Only 8 colors available.
+        INY
+        TAX
+        LDA mode2_solid_colors,X    ; Convert right-pixel to interleaved using table.
+        AND #$55
+        ORA tmp_conv                ; Interleave left and right pixels.
+        LDX #0
+        STA (bmp_ptr,X)             ; Set bitmap byte.
+        INC bmp_ptr
+        BNE +
+        INC bmp_ptr+1
++       INY                         ; Skip two pixels (we are rendering half-tile in this inner loop).
+        INY
+        DEC line_countdown
+        BNE nxt_tile_byte_BEEB
+        ; Half-tile done.
+        DEC halves_countdown
+        BEQ done_tile_BEEB
+        ; Get back to right-tile pixels.
+        TYA
+        SEC
+        SBC #30
+        TAY
+        BNE nxt_halftile_BEEB       ; NOTE: This is actually an unconditional relative branch.
+done_tile_BEEB:
 
+        RTS
+.endif
+
+halves_countdown:   .byte 0
+line_countdown:     .byte 0
+tmp_conv:           .byte 0    
+
+    
 ;------------- Mandelbrot calculation -------------
+.if BUILD_BEEB
+        * = $1C00
+.else
         * = $4000
+.endif
 
 Mandelbrot:
         ; Max iters
@@ -1315,7 +1641,13 @@ Mandelbrot:
     
         ; Default coordinates (fixed_point, *1024).
         start_ax = -2200
-        start_ay = 1200
+.if BUILD_BEEB
+        ; Center vertically for 256 lines displays.
+        start_ay =  1440
+.else
+        ; Center vertically for 200 lines displays.
+        start_ay =  1248
+.endif        
         
         LDA #<start_ax
         STA ax
@@ -1332,9 +1664,9 @@ Mandelbrot:
         STA incx_lr+1
         STA incy_lr+1    
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI
+        AND #MODE_VIC2 | MODE_KAWARI | MODE_BEEB
         BEQ +
-        LDA #100
+        LDA #96             ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
         STA incx_lr
         STA incy_lr
         JMP done_incs
@@ -1379,13 +1711,13 @@ nxt_pass:
         STA incy+1
         ; Handle mode-dependent params.
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI
+        AND #MODE_VIC2 | MODE_KAWARI | MODE_BEEB ; Check for VIC2 and similar chips.
         BNE +
-        JMP no_VIC2_setup
+        JMP no_VIC2ish_setup
         ;------ VIC2
 +       LDA res
         BNE hi_res
-        ; VIC2 lo-res (one single 40x25 tile).
+        ; Lo-res. One single (LORES_W x LORES_H) tile.
         LDA #1
         STA num_tiles_w
         STA num_tiles_h
@@ -1394,10 +1726,10 @@ nxt_pass:
         STA tile_num+1
         STA screenw+1
         STA screenh+1
-        LDA #40
+        LDA #LORES_W
         STA screenw
         STA tilew
-        LDA #25
+        LDA #LORES_H
         STA screenh
         STA tileh
         ; In lo-res we write directly to Color RAM after calculating a pixel.
@@ -1421,9 +1753,9 @@ hi_res:
         LDA #0
         STA screenw+1
         STA screenh+1
-        LDA #40
+        LDA #LORES_W
         STA num_tiles_w
-        LDA #25
+        LDA #LORES_H
         STA num_tiles_h
         LDA #HIRES_TILE_W
         STA tilew
@@ -1470,7 +1802,7 @@ hi_res:
         STA ax+1
         STX incx_lr
         LDA incy_lr
-        CLC ; Not needed
+        CLC
         ROR
         CLC
         ADC ay
@@ -1479,8 +1811,9 @@ hi_res:
         ADC #0
         STA ay+1
         JMP first_tile
-no_VIC2_setup:
+no_VIC2ish_setup:
 
+.if BUILD_C128
         LDA mode
         CMP #MODE_VDC
         BNE +
@@ -1507,6 +1840,7 @@ no_VIC2_setup:
         JSR vdc_write
         JMP first_tile
 +
+.endif ; BUILD_C128
 
 first_tile:
         LDA ax
@@ -1637,8 +1971,11 @@ zx2_sw:
         LDA zx+1
         STA x1
         STA y1
-        ;JSR multiply_Q6_10_signed ; [z1..z2] = zx*zx
+.if BUILD_PET | BUILD_BEEB        
+        JSR multiply_Q6_10_signed ; [z1..z2] = zx*zx
+.else
         JSR square_Q10_6
+.endif        
         LDA z1
         STA zx2
         LDA z2
@@ -1652,8 +1989,11 @@ zx2_done:
         LDA zy+1
         STA x1
         STA y1
-        ;JSR multiply_Q6_10_signed ; [z1..z2] = zy*zy
+.if BUILD_PET | BUILD_BEEB         
+        JSR multiply_Q6_10_signed ; [z1..z2] = zy*zy
+.else        
         JSR square_Q10_6
+.endif        
         LDA z1
         STA zy2
         LDA z2
@@ -1745,6 +2085,7 @@ found_color:
 +       ; If we are in hi-res mode, we do not set Color RAM here.
         LDA res
         BNE skip_ColorRAM
+        ; Lo-res.
         LDA mode
         AND #MODE_VIC2 | MODE_KAWARI
         BEQ no_VIC2
@@ -1761,6 +2102,7 @@ found_color:
         INC cram_ptr+1
 +       JMP nxt_point
 no_VIC2:
+.if BUILD_C128
         LDA mode
         CMP #MODE_VDC
         BNE +
@@ -1771,6 +2113,25 @@ no_VIC2:
         JSR vdc_write
         JMP nxt_point
 +
+.endif
+.if BUILD_BEEB
+        ; MODE_BEEB
+        ; We don't have Color RAM, so we just fake it using bitmap.
+        LDA iter
+        AND #$07          ; Mode-2 is 8 colors.
+        TAX
+        LDA mode2_solid_colors,X    ; Use table to convert to solid color pattern (2 pixels of 4 bits each).
+        LDY #0
+        LDX #16           ; 2 pixels per byte. We need to set 4x8 = 32 pixels, hence 16 bytes.
+-       STA (cram_ptr),Y  ; Set 2 pixels.
+        INC cram_ptr
+        BNE +
+        INC cram_ptr+1
++       DEX
+        BNE -
+        JMP nxt_point
+.endif
+
 skip_ColorRAM:
 
 ; Go to nxt point.
@@ -1829,6 +2190,8 @@ end_tile:
         JSR render_tile_multicolor
 .elif BUILD_ATARI
         JSR render_tile_ATARI
+.elif BUILD_BEEB
+        JSR render_tile_BEEB
 .endif        
 
 go_to_next_tile:
@@ -1980,18 +2343,15 @@ check_skippable:
         LDA #>buf_iters_lr
         ADC tile_num+1
         STA buf_it_ptr+1
-+       LDY #$00
+        LDY #$00
         ; Get reference lo-res iters in this point.
         LDA (buf_it_ptr),Y
         TAX                ; Save iters.
         ; Dec buf_it_ptr, as indirect-indexed does not allow negative offsets.
-        SEC
         LDA buf_it_ptr
-        SBC #1
-        STA buf_it_ptr
-        LDA buf_it_ptr+1
-        SBC #0
-        LDA buf_it_ptr+1
+        BNE +
+        DEC buf_it_ptr+1
++       DEC buf_it_ptr
         TXA                ; Restore iters.
         ; Now compare to iters in other lo-res pixels at cardinal directions.
         ; Check WEST
@@ -2005,7 +2365,6 @@ check_skippable:
         BEQ +
         RTS
 +       ; Check northern neighbors.
-        TAX                 ; Save iters.
         LDA buf_it_ptr
         SEC
         SBC num_tiles_w
@@ -2029,16 +2388,14 @@ check_skippable:
         BEQ +
         RTS        
 +       ; Check southern neighbors.
-        TAX                 ; Save iters.
-        ASL num_tiles_w     ; num_tiles_w *= 2
+        LDA num_tiles_w
+        ASL                 ; num_tiles_w *= 2
         CLC
-        LDA buf_it_ptr
-        ADC num_tiles_w
+        ADC buf_it_ptr
         STA buf_it_ptr
         LDA buf_it_ptr+1
         ADC #0
         STA buf_it_ptr+1
-        ROR num_tiles_w     ; num_tiles_w /= 2
         TXA                 ; Restore iters.
         ; Check SOUTH-WEST
         CMP (buf_it_ptr),Y
@@ -2091,10 +2448,19 @@ b_end_of_row:
         BNE -
         RTS
 
+.elif BUILD_BEEB
+        CLC
+        LDA bmp_ptr
+        ADC #16
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       RTS
 .else   
+        ; Unknown machine.
         RTS     
-
 .endif        
+
 
 ;=========================================================================
 ; Check for user input.
@@ -2106,28 +2472,158 @@ b_end_of_row:
 check_userinput:
         ; Read joy inputs and translate to common format.
 .if BUILD_C64 | BUILD_C128
-        LDA $DC00         ; Get CIA1:PRA. This is [xxxFRLDU].
-        AND #$1F          ; Get only joy-2 actions.
+        ; C64/C128 joystick.
+        LDA $DC00           ; Get CIA1:PRA. This is [xxxFRLDU].
+        AND #$1F            ; Get only joy-2 actions.
+
 .elif BUILD_TED
+        ; TED joystick input.
         LDA #$FF
-        STA $FD30         ; 6529B Keyboard scan mask.
-        LDA #$02          ; Select joy-1.
-        STA $FF08         ; Strobe latch.
-        LDA $FF08         ; Read value.
-        AND #$0F          ; Mask directions.
+        STA $FD30           ; 6529B Keyboard scan mask.
+        LDA #$02            ; Select joy-1.
+        STA $FF08           ; Strobe latch.
+        LDA $FF08           ; Read value.
+        AND #$0F            ; Mask directions.
         ; Directions are already in common format, but fire is bit 6.
-        BIT $FF08         ; Check for joy-1 fire (pressed if bit 6 is 0).
+        BIT $FF08           ; Check for joy-1 fire (pressed if bit 6 is 0).
         BVC +
         ORA #$10
 +       
+
 .elif BUILD_ATARI
-        LDA $D300         ; PIA:PORTA[3..0] is joy-1 directions [R,L,D,U]. Active low.
+        ; Atari joystick input.
+        LDA $D300           ; PIA:PORTA[3..0] is joy-1 directions [R,L,D,U]. Active low.
         AND #$0F
-        LDX $D010         ; GTIA:TRIG0[0] is joy-1 trigger. Active low.
-        BEQ +             ; We can do this because TRIG0[7..1] is always 0.
+        LDX $D010           ; GTIA:TRIG0[0] is joy-1 trigger. Active low.
+        BEQ +               ; We can do this because TRIG0[7..1] is always 0.
         ORA #$10
 +
+
+.elif BUILD_BEEB
+        ; BBC Micro analog joystick input (uPD7002 chip).
+        ; First, read fire button.
+        LDX #$1F            ; Use X to store joy value.
+        LDA $FE40
+        AND #$10            ; Bit 4 is low if joy-1 fired.
+        BNE +
+        LDX #$0F            ; Fire pressed.
+ +      ; Now check directions.
+ 
+        LDA beeb_joy_dir_axis   ; Get current axis (bit 0) and waiting flag (bit 7).
+        BMI adc_check       ; If bit 7 is set, check if result is ready.
+        ; Else, init next axis read.
+adc_init:
+        AND #$01            ; Select channel: 0 = Joy-1 x-axis; 1 = Joy-1 y-axis.
+        STA $FEC0           ; Write to data latch / AD start reg.
+        ORA #$80            ; Remember to wait for the ADC (about 4ms for 8-bit).
+        STA beeb_joy_dir_axis
+        JMP done_joy_BEEB
+
+adc_check:
+        LDA $FEC0           ; Read ADC status register. Bit 7 is 0 when conversion completed.
+        BMI done_joy_BEEB   ; Branch if conversion not yet completed.
+        ; Conversion completed.
+        LDA beeb_joy_dir_axis
+        TAY                 ; Save axis to Y (bit 7 is also set).
+        LDA $FEC1           ; Fetch ADC value [0..255].
+        CPY #$80            ; Which axis ?
+        BNE +
+        STA beeb_joy_last_x
+        BEQ chk_thesholds   ; Unconditional.
+ +      STA beeb_joy_last_y
+ chk_thesholds:
+        CMP #32             ; Dead-zone threshold low.
+        BCS chk_hi          ; BGE
+        ; Low detected.
+        CPY #$80            ; Which axis ?
+        BNE +
+        ; RIGHT
+        TXA
+        AND #$F7
+        TAX
+        JMP switch_axis
++       ; DOWN
+        TXA
+        AND #$FD
+        TAX
+        JMP switch_axis        
+        
+chk_hi: CMP #256-32         ; Dead-zone threshold high.
+        BCC switch_axis     ; BLT
+        ; High detected.
+        CPY #$80            ; Which axis ?
+        BNE +
+        ; LEFT
+        TXA
+        AND #$FB
+        TAX
+        JMP switch_axis
++       ; UP
+        TXA
+        AND #$FE
+        TAX
+        JMP switch_axis
+
+switch_axis:
+        ; Switch axis for next read.
+        LDA beeb_joy_dir_axis
+        EOR #$01
+        STA beeb_joy_dir_axis
+        JMP adc_init        ; Init next axis read.
+
+done_joy_BEEB:
+        ; Read keyboard.
+        ; 'SHIFT'
+        LDA #0
+        STA $FE4F
+        LDA $FE4F  ; N flag = pressed.
+        BPL +
+        TXA
+        AND #$EF   ; Simulate fire with 'SHIFT'.
+        TAX
++       ; 'RIGHT'
+        LDA #121
+        STA $FE4F
+        LDA $FE4F  ; N flag = pressed.
+        BPL +
+        TXA
+        AND #$F7
+        TAX
++       ; 'LEFT'
+        LDA #25
+        STA $FE4F
+        LDA $FE4F  ; N flag = pressed.
+        BPL +
+        TXA
+        AND #$FB
+        TAX
++       ; 'DOWN'
+        LDA #41
+        STA $FE4F
+        LDA $FE4F  ; N flag = pressed.
+        BPL +
+        TXA
+        AND #$FD
+        TAX
++       ; 'UP'
+        LDA #57
+        STA $FE4F
+        LDA $FE4F  ; N flag = pressed.
+        BPL +
+        TXA
+        AND #$FE
+        TAX
++
+        ; ...
+
+done_keyb_BEEB:
+        TXA                 ; Move result to A.
+        
+.else
+        ; Unsupported platform. No input.
+        LDA #$1F
 .endif
+        
         CMP #$1F
         BNE yes_input
         ; No input.
@@ -2145,6 +2641,8 @@ yes_input:
         LDA $FF03         ; Get TED Timer #1
 .elif BUILD_ATARI
         LDA frame_couter  ; Get 
+.elif BUILD_BEEB
+        LDA $FE45         ; Time 1 high byte.
 .endif
 
         AND #$F0          ; Time mask.
@@ -2654,10 +3152,9 @@ multiply_Q6_10_signed:
         
         RTS
 
-
 buf_iters_hr:              .fill 4*8    ; We buffer hi-res tiles up to 4x8.
 buf_tile_size:             .byte 0      ; 0 means screen size or none (depending on mode).
-; Tile iterations buffer (40*25).
+; Tile iterations buffer (max 40*32).
 ; This is only used in hi-res. In lo-res we write colors directly to Color RAM.
 .if BUILD_C64
 buf_iters_lr = $E000
@@ -2669,6 +3166,8 @@ buf_iters_lr = $E000
 buf_iters_lr = $1C00            ; Is that ok ?
 .elif BUILD_ATARI
 buf_iters_lr = $E000
+.elif BUILD_BEEB
+buf_iters_lr = $1000
 .endif
 
 
@@ -2713,9 +3212,11 @@ mul_tab_offset = $4700
 .elif BUILD_TED
 mul_tab_offset = $4700
 .elif BUILD_PET
-mul_tab_offset = $0         ; Not available.
+mul_tab_offset = $2000
 .elif BUILD_ATARI
 mul_tab_offset = $4700
+.elif BUILD_BEEB
+mul_tab_offset = $2700
 .endif
 
 ; Note - the last byte of each table is never referenced, as a+b<=510
@@ -2915,4 +3416,6 @@ mulu_init:
     lda #>negsqrhi
     sta p_neg_sqr_hi+1
     rts
+    
+END_ADDRESS:
     
