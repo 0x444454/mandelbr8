@@ -5,15 +5,18 @@ Currently supported:
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
 - Atari XL/XE (64 KB).
+- BBC Micro (32 KB).
 - [more 8 bit machines in the future]
 
-![screenshots](media/mandel8-20241123.jpg)
+![screenshots](media/mandel8-20241202.jpg)
 
 # CONTROLS
 
 The app is simply controlled using a joystick:
 - C64/C128: Joystick port 2.
 - TED machines: Joystick port 1.
+- Atari XL/XE: Joystick port 1.
+- BBC Micro: Analog joystick port 1 (untested), or cursor keys + shift.
 
 Actions:
 - Up, Down, Left, Right: Move around in complex plane.
@@ -43,6 +46,13 @@ Note: The 80x50 text mode is experimental and has not been tested on a CRT displ
 - Second pass: 80x200, 16 shades of gray
 
 Note: This uses ANTIC mode F.1 (GTIA 16 luma mode).
+
+### BBC Micro
+- First pass: 40x32, 8 colors
+- Second pass: 160x256, 8 colors
+
+Note: Tube accelerators not yet supported.
+
 
 # ALGORITHM
 
@@ -88,7 +98,7 @@ We use pastel colors on the TED and use Light Gray as the second shared color to
 After calculating all colors in the 4x8 tile, we create a color histogram and assign block colors based on the most used ones.  
 Depending on the tile location in the complex plane, some color artifacts might still be noticeable.
 
-Note: The Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported (WIP).
+Note: The C64 with Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported (WIP).
 
 # LICENSE
 
