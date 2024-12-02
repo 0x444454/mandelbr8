@@ -6,6 +6,7 @@ Pick the binary for your target machine:
 - **mandelbr8-c128**   : Commodore 128 (40 or 80 column mode, autodetected)
 - **mandelbr8-ted**    : Commodore Plus/4 or C16 (64 KB RAM required)
 - **mandelbr8-atari**  : Atari XL/XE (64 KB RAM required)
+- **mandelbr8-beeb**   : BBC Micro B (32 KB RAM required)
 
 # LICENSE
 
