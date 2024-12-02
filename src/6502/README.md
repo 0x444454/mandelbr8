@@ -10,6 +10,7 @@ BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
 BUILD_C128  = 0 ; Commodore 128
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_ATARI = 0 ; Atari XL/XE (64 KB required).
+BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
 ```
 
 Enable **only** one build at a time.
