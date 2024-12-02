@@ -28,6 +28,14 @@ Build with TASS:
 
 ```64tass --output-exec=main --atari-xex -o "mandelbr8.xex" -L "mandelbr8.lst" -a "mandelbr8.asm"```
 
+### BBC Micro B:
+
+Build with TASS:
+
+```64tass -b -o "mandelbr8.ssd" -L "mandelbr8.lst" -a "mandelbr8.asm"```
+
+This will create a minimalistic bootable SSD file.
+
 # LOAD AND RUN
 
 ### Commodore machines:
@@ -38,6 +46,11 @@ RUN
 
 ### Atari machines:
 Run the XEX file.
+
+
+### BBC Micro:
+Autoboot the floppy disk image.
+
 
 # LICENSE
 
