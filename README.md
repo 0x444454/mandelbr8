@@ -5,7 +5,7 @@ Currently supported:
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
 - Atari XL/XE (64 KB).
-- BBC Micro (32 KB).
+- BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
 
 ![screenshots](media/mandel8-20241202.jpg)
