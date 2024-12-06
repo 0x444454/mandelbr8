@@ -4,6 +4,7 @@ Currently supported:
 - Commodore 64 (with or without Kawari acceleration).
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
+- Commodore VIC-20 (16+ KB).
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
@@ -40,6 +41,10 @@ Note: Kawari 320x200 high resolution is not yet supported (work in progress).
 - Second pass: [not yet supported].
 
 Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
+
+### VIC-20
+- First pass: 22x22, 16 colors
+- Second pass: 88x176, 4 colors (multicolor bitmap)
 
 ### ATARI XL/XE:
 - First pass: 40x25, 16 shades of gray
