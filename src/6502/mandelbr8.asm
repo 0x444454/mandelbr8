@@ -19,15 +19,17 @@
 ;   2024-11-27: Studied BBC Micro system arch. [DDT]
 ;   2024-11-28: Support BBC Micro. [DDT]
 ;   2024-12-02: Minor bugs fixed. [DDT]
+;   2024-12-06: Support VIC-20. [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
 BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
-BUILD_C128  = 0 ; Commodore 128
+BUILD_C128  = 0 ; Commodore 128.
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
+BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
 BUILD_PET   = 0 ; WARNING: Commodore PET machines ARE NOT YET SUPPORTED !!!.
 BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
-BUILD_BEEB  = 0 ; BBC Micro.
+BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
 
 ; BEGIN: Commodore machines -----------------
 .if BUILD_C64
@@ -36,6 +38,8 @@ BUILD_BEEB  = 0 ; BBC Micro.
   * = $1C01   ; C128
 .elif BUILD_TED
   * = $1001   ; TED machines (C16 and Plus/4)
+.elif BUILD_VIC20
+  * = $1201   ; VIC-20 (8+ KB)
 .elif BUILD_PET
   * = $401    ; PET.
 .elif BUILD_ATARI
@@ -44,7 +48,7 @@ BUILD_BEEB  = 0 ; BBC Micro.
   LOAD_ADDRESS = $1800   ; BBC Micro
 .endif
   
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_VIC20 | BUILD_PET
   .word end_BASIC
   .word 10
   .byte $9e ; SYS
@@ -55,10 +59,11 @@ BUILD_BEEB  = 0 ; BBC Micro.
     .text "7181", $00 ; C128
   .elif BUILD_TED
     .text "4109", $00 ; TED
+  .elif BUILD_VIC20
+    .text "4621", $00 ; VIC-20
   .elif BUILD_PET
     .text "1037", $00 ; PET
   .endif
-
 end_BASIC:
   .word 0
 .endif
@@ -564,18 +569,57 @@ no_C128:
         STA COL_BGND
 .endif
         
+
+.if BUILD_VIC20
+        ; VIC20 initialization.
+        LDA #$7F
+        STA $911E     ; Disable VIA1 NMI.
+        STA $912E     ; Acknowledge VIA2 interrupts.
+        STA $912D     ; Disable VIA2 interrupts.
+        ; Set background to black and border colors (i.e. multicolor %01) to white.
+        COL_VIC_BORDER = 1 ; Must be <= 7.
+        LDA #$00 | COL_VIC_BORDER  ; [7..4]=Background, 3=Reverse, [2..1]=Border.
+        STA $900F
+        ; Set auxiliary color (i.e. multicolor %11) to cyan.
+        COL_VIC_AUX = 3 ; Must be <= 7.
+        LDA #COL_VIC_AUX<<4
+        STA $900E
+
+        ; Set Screen RAM location at $0200 and Color RAM at $9600.
+        ;  SCR_RAM[13-10] = $9005 [7..4]
+        ;  SCR_RAM[9]     = $9002 [7]
+        LDA #$80
+        STA $9005
+        LDA #$80|22
+        STA $9002
+;r JMP r
+        
+        ; Init VIAs for joystick reading (joystick input uses both VIAs).
+        LDA #$00
+        STA $9113 ; VIA1 DDRA
+        STA $9122 ; VIA2 DDRB
+
+        ; Too tight in here, as we need to define a "bitmap" charset (256 chars, 16 lines each): $1000-$1FFF.
+        JMP $2400
+        * = $2400
+.endif
+        
+
         ; Print wait msg.
         LDA #<str_wait
         STA str_ptr
         LDA #>str_wait
         STA str_ptr+1
         JSR print_str
+
         
         ; Only build squares table if we have at least 64 KB RAM.
 .if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_ATARI
         ; Initialize Q5.9 squares table.
         JSR init_squares_q5_9
 .endif
+
+
 
 .if BUILD_ATARI
         ; Enable special GTIA mode (16 luma).
@@ -614,7 +658,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2024-12-02", $0D
+        .text "version 2024-12-06", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -706,6 +750,18 @@ atari_IRQ:
   HIRES_TILE_W = 4
   HIRES_TILE_H = 8  
   BITMAP_START = $2000
+.elif BUILD_VIC20
+  SCR_RAM      = $0200 ; Video matrix.
+  COL_RAM      = $9600
+  COL_BORDER   = $900F ; Border and background are in the same register. Border is [2..0].
+  COL_BGND     = $900F ; Border and background are in the same register. Background is [7..4].
+  LORES_W      = 22
+  LORES_H      = 22
+  HIRES_W      = LORES_W*4
+  HIRES_H      = LORES_H/2*16 ; I.e. 11 rows of chars, 16 lines per char.
+  HIRES_TILE_W = 4
+  HIRES_TILE_H = 8
+  BITMAP_START = $1000 ; Charset defined at $1000.
 .elif BUILD_PET
   SCR_RAM      = $8000 ; Video matrix.
   COL_RAM      = 0     ; No color RAM. Unfortunately, TASS64 has no .ifdef.
@@ -782,6 +838,9 @@ kawari_palette_LPA:
 ; Print zero-terminated string pointed to by (str_ptr), max 255 chars.
 ; This routine trashes registers and changes (str_ptr).
 print_str:
+.if BUILD_VIC20 | BUILD_PET
+        RTS
+.endif
 pr_ch:
         LDY #$00           ; Clear index.
         LDA (str_ptr), Y   ; Load the next char from the message.
@@ -799,7 +858,7 @@ pr_ch:
         ; Clear text screen (and some more :-) with all reverse spaces.
         LDX #$00
 -       
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET        
+.if BUILD_C64 | BUILD_C128 | BUILD_TED
         LDA #$20           ; Commodore Space
 .else
         LDA #$00           ; Atari Space
@@ -826,7 +885,7 @@ pr_ch:
         ; ASCII char. Convert to screen code.
         CLC
         CMP #32
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET        
+.if BUILD_C64 | BUILD_C128 | BUILD_TED
         BPL +
         ADC #128 ; Commodore
 .else
@@ -840,7 +899,7 @@ pr_ch:
         CMP #97
         BPL +
         SEC
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET        
+.if BUILD_C64 | BUILD_C128 | BUILD_TED      
         SBC #64
 .else
         SBC #32 ; ATARI
@@ -848,7 +907,7 @@ pr_ch:
         JMP done_conv
 +       CMP #128
         BPL done_conv
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET          
+.if BUILD_C64 | BUILD_C128 | BUILD_TED       
         SEC
         SBC #32
 .endif        
@@ -921,6 +980,46 @@ nxt_page:
         BNE nxt_page
         RTS
 .endif
+
+.if BUILD_VIC20
+        LDA res
+        BNE clear_hi
+        ; Clear lo-res
+        ;
+        ; Screen RAM
+        LDX #$00
+        LDA #' '
+-       STA SCR_RAM,X
+        STA SCR_RAM+$100,X
+        INX
+        BNE -
+        ; Color RAM
+        LDA #$00
+-       STA COL_RAM,X
+        STA COL_RAM+$100,X
+        INX
+        BNE -
+        RTS
+
+clear_hi:
+        ; Clear hi-res
+        LDA #<BITMAP_START
+        STA bmp_ptr
+        LDA #>BITMAP_START
+        STA bmp_ptr+1
+        LDY #0
+nxt_page:
+        LDA #$00
+-       STA (bmp_ptr),Y
+        INY
+        BNE -
+        INC bmp_ptr+1
+        LDA bmp_ptr+1
+        CMP #>BITMAP_START + $10 ; We clear $1000 bytes.
+        BNE nxt_page
+        RTS
+.endif
+
         LDA mode
         AND #MODE_VIC2 | MODE_KAWARI
         BEQ +
@@ -1157,6 +1256,111 @@ chk_KAWARI_res:
         STA $FF06
         LDA #1          ; Return OK
         JMP end_applymode
+.elif BUILD_VIC20
+        LDA res
+        BNE vic_hr
+        ; VIC-20 lo-res.
+        ; Set char mem to $8000 (ROM).
+        LDA #$80
+        STA $9005
+        ; Set 22x22 resolution, 8 lines per char.
+        LDA #$80|22
+        STA $9002       ; Cols
+        LDA #22<<1
+        STA $9003       ; Rows
+        ; Return OK
+        LDA #1
+        JMP end_applymode
+vic_hr: 
+        ; Fill Screen RAM with sequential chars to fake bitmap mode, and init Color RAM.
+        LDX #$00
+-       TXA
+        STA SCR_RAM,X
+        LDA #$08|4          ; Set CRAM to fixed char color + multicolor attribute.
+        STA COL_RAM,X
+        INX
+        CPX #22*11
+        BNE -
+        ; Set char mem to $1000 (this is our bitmap RAM).
+        LDA #$8C ; $1000
+        STA $9005
+        ; Set 22x11 resolution, 16 lines per char.
+        LDA #$80|22
+        STA $9002       ; Cols
+        LDA #11<<1|1
+        STA $9003       ; Rows.
+        ; Now render hi-res preview using the lo-res iterations buffer.
+        LDA #<BITMAP_START
+        STA bmp_ptr
+        LDA #>BITMAP_START
+        STA bmp_ptr+1
+        ; Let's do two lo-res rows at a time to handle 16-lines chars.
+        LDA #<buf_iters_lr
+        STA buf_it_ptr
+        LDA #>buf_iters_lr
+        STA buf_it_ptr+1
+        LDA #LORES_H
+        LSR                 ; We convert 2 lo-res rows at a time.  
+        STA ctdwn_rows
+nxt_tile_rows_to_convert:         
+        LDA #LORES_W
+        STA ctdwn_cols
+nxt_tile_to_convert:        
+        ; Upper half.
+        LDY #0
+        LDA (buf_it_ptr),Y
+        AND #$03            ; Mod4.
+        TAX
+        LDA vic_multicolor_table,X
+-       STA (bmp_ptr),Y
+        INY
+        CPY #8
+        BNE -
+        ; Lower half.
+        LDY #LORES_W
+        LDA (buf_it_ptr),Y
+        AND #$03            ; Mod4.
+        TAX
+        LDA vic_multicolor_table,X        
+        LDY #8
+-       STA (bmp_ptr),Y
+        INY
+        CPY #16
+        BNE -
+        ; Done 16-lines char.
+        INC buf_it_ptr
+        BNE +
+        INC buf_it_ptr+1
++       LDA bmp_ptr
+        CLC
+        ADC #16
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       DEC ctdwn_cols
+        BNE nxt_tile_to_convert
+        ; Done two tile rows.
+        ; Point to next lo-res addr.
+        LDA buf_it_ptr
+        CLC
+        ADC #<LORES_W
+        STA buf_it_ptr
+        LDA buf_it_ptr+1
+        ADC #>LORES_W
+        STA buf_it_ptr+1
+        ; Point to next hi-res addr.        
+        DEC ctdwn_rows
+        BNE nxt_tile_rows_to_convert
+        ; Return OK
+        LDA #1
+        JMP end_applymode
+
+vic_multicolor_table:
+             .byte $00, $55, $AA, $FF
+
+ctdwn_cols:  .byte 0
+ctdwn_rows:  .byte 0
+
 .elif BUILD_ATARI
         LDA #$14            ; High byte of display list address (default to lo-res).
         LDX res
@@ -1290,6 +1494,8 @@ clear_bitmap:
         LDA #$FF        ; Default to multicolor 3 (taken from Color RAM which should be already set).
 .elif BUILD_TED
         LDA #$AA        ; Default color to video matrix [3−0], luma to attribute matrix [6−4].
+.elif BUILD_VIC20
+        LDA #$FF        ; Default to multicolor 3.
 .endif        
         STA (str_ptr,X)
         INC str_ptr
@@ -1368,9 +1574,14 @@ find_next:
         RTS
 
 
+
 ;------------- Render tile (multicolor version) -------------
 ; Render a hi-res tile in multicolor mode.
-; 
+; We have several different variants, as Commodore video chips are all different in this regard, i.e. for each 4x8 cell:
+; - VIC:    1 custom color,  3 global. We use 4 fixed global colors.
+; - TED:    2 custom colors, 2 global. We pick the 2 most used in the cell.
+; - VIC-II: 3 custom colors, 1 global. We pick the 3 most used in the cell.
+;
 render_tile_multicolor:
 .if BUILD_C64 | BUILD_C128
         ; Render a multicolor 4x8 tile based on the computed histogram.
@@ -1427,9 +1638,11 @@ render_tile_multicolor:
         AND #$0F
         ORA (cram_ptr),Y
         STA (cram_ptr),Y
+.elif BUILD_VIC20
+        ; We use 4 fixed colors in multicolor mode, so no need to set cram here (already done in hi-res mode init).
 .endif
 
-.if BUILD_C64 | BUILD_C128 | BUILD_TED        
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_VIC20      
         ; bmp_ptr contains the current tile bitmap line (4 pixels, 2 bits each).
         ; buf_it_ptr is the per-pixel iterations buffer.
         LDA #<buf_iters_hr
@@ -1445,6 +1658,11 @@ nxt_tile_line_MC:
 nxt_tile_pix_MC:
         ; Fetch pixel iters and convert to color.
         LDA (buf_it_ptr),Y
+    .if BUILD_VIC20
+        ; VIC-20: Direct map iters to color.
+        AND #$03         ; Mod4.
+    .else
+        ; All other machines: Find best match.
         AND #$0F         ; Mod16.
         ; If black, pass-through as background color.
         BEQ found_conversion
@@ -1465,6 +1683,7 @@ nxt_tile_pix_MC:
 +       AND #%11
         BNE found_conversion
         LDA #%01         ; If %00 (black), then make it %01.
+    .endif
 found_conversion:
         STX tmp_X        ; Save X.
         CPX #0
@@ -1485,8 +1704,19 @@ done_adjust:
         INC bmp_ptr      ; Inc bitmap ptr.
         BNE +
         INC bmp_ptr+1
-+       CPY buf_tile_size
++        
+        CPY buf_tile_size
         BNE nxt_tile_line_MC
+    .if BUILD_VIC20
+        ; On VIC-20 our bitmap is represented by 16-line chars, so skip next 8 lines.
+        LDA bmp_ptr
+        CLC
+        ADC #8
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++        
+    .endif
 .endif
         RTS
 
@@ -1630,6 +1860,8 @@ tmp_conv:           .byte 0
 ;------------- Mandelbrot calculation -------------
 .if BUILD_BEEB
         * = $1C00
+.elif BUILD_VIC20
+        * = $3000
 .else
         * = $4000
 .endif
@@ -1668,6 +1900,9 @@ Mandelbrot:
         BEQ +
         LDA #96             ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
         STA incx_lr
+.if BUILD_VIC20
+        ASL incx_lr         ; Double that for VIC-20 char aspect-ratio.
+.endif        
         STA incy_lr
         JMP done_incs
 +       LDA mode
@@ -1683,8 +1918,6 @@ done_incs:
 
 first_pass:
         ; First pass is lo-res.
-        LDA #$00
-        STA COL_BORDER
         ; Configure incs for first pass depending on video mode.
         LDA #0
         STA res           ; lo-res
@@ -1971,7 +2204,7 @@ zx2_sw:
         LDA zx+1
         STA x1
         STA y1
-.if BUILD_PET | BUILD_BEEB        
+.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB        
         JSR multiply_Q6_10_signed ; [z1..z2] = zx*zx
 .else
         JSR square_Q10_6
@@ -1989,7 +2222,7 @@ zx2_done:
         LDA zy+1
         STA x1
         STA y1
-.if BUILD_PET | BUILD_BEEB         
+.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB         
         JSR multiply_Q6_10_signed ; [z1..z2] = zy*zy
 .else        
         JSR square_Q10_6
@@ -2184,9 +2417,12 @@ end_tile:
         BEQ switch_to_hires
     
         ; We have completed a hi-res tile, render it.
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
+.if BUILD_C64 | BUILD_C128 | BUILD_TED
         JSR build_histogram
         JSR scan_histogram
+        JSR render_tile_multicolor
+.elif BUILD_VIC20
+        ; No need for histogram (4 fixed colors).
         JSR render_tile_multicolor
 .elif BUILD_ATARI
         JSR render_tile_ATARI
@@ -2206,6 +2442,27 @@ go_to_next_tile:
         ; End of tile row, advance to next row.
 .if BUILD_ATARI
         JSR bmp_to_next_tile    ; Needed on Atari to update linear bitmap pointer.
+.elif BUILD_VIC20
+        LDA tiley
+        AND #$01
+        BNE +
+        ; If tiley is even, go back to second half of 16-lines custom characters.
+        LDA bmp_ptr
+        SEC
+        SBC #<344
+        STA bmp_ptr
+        LDA bmp_ptr+1
+        SBC #>344
+        STA bmp_ptr+1
+        JMP done_vnt
++       ; If tiley is odd, just go back 8 lines.
+        LDA bmp_ptr
+        SEC
+        SBC #8
+        STA bmp_ptr
+        BCS done_vnt
+        DEC bmp_ptr+1
+done_vnt:
 .endif        
         INC tiley
         LDA tiley
@@ -2424,7 +2681,46 @@ bmp_to_next_tile:
         STA bmp_ptr
         BCC +
         INC bmp_ptr+1
-+       RTS
++        
+        RTS
+
+.elif BUILD_VIC20
+        LDX tilex
+        CPX num_tiles_w
+        BNE skip_16b
+        ; End of row.
+        LDA tiley
+        AND #$01
+        BEQ skip_8b
+        ; If tiley is even, go back to second half of 16-lines custom characters.
+        LDA bmp_ptr
+        SEC
+        SBC #<344
+        STA bmp_ptr
+        LDA bmp_ptr+1
+        SBC #>344
+        STA bmp_ptr+1
+        RTS
+
+skip_8b:
+        CLC
+        LDA bmp_ptr
+        ADC #8
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++        
+        RTS
+
+skip_16b:
+        CLC
+        LDA bmp_ptr
+        ADC #16
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++        
+        RTS
 
 .elif BUILD_ATARI
         LDX tilex
@@ -2489,7 +2785,25 @@ check_userinput:
         BVC +
         ORA #$10
 +       
-
+.elif BUILD_VIC20
+      
+        ; VIC20 joystick input.
+        LDA $911F           ; Get VIA1:PA. This is [xxFLDUxx].
+        LSR
+        LSR                 ; [00xxFLDU]
+        AND #$0F            ; [0000FLDU]
+        STA input_scratch
+        ASL                 ; [000FLDU0]
+        AND #$10            ; [000F0000]
+        ORA input_scratch   ; [000FFLDU]
+        STA input_scratch
+        LDA $9120           ; Get VIA2:PB. This is [Rxxxxxxx].
+        ROL                 ; Carry = R
+        LDA input_scratch
+        AND #$17            ; [000F0LDU]
+        BCC +
+        ORA #$08            ; [000FRLDU]
++
 .elif BUILD_ATARI
         ; Atari joystick input.
         LDA $D300           ; PIA:PORTA[3..0] is joy-1 directions [R,L,D,U]. Active low.
@@ -2639,6 +2953,8 @@ yes_input:
         LDA $DC07         ; Get Timer B high byte.
 .elif BUILD_TED
         LDA $FF03         ; Get TED Timer #1
+.elif BUILD_VIC20
+        LDA $9115         ; Get Timer #1
 .elif BUILD_ATARI
         LDA frame_couter  ; Get 
 .elif BUILD_BEEB
@@ -2675,6 +2991,13 @@ fire:
         ; Note: We have almost no checks for precision underflow.
         ;       Let's call underflow a "user error" :-)
 chk_zoom_IN:
+.if BUILD_VIC20
+    INCX_ZOOM_STEP = 8
+    INCY_ZOOM_STEP = 4
+.else
+    INCX_ZOOM_STEP = 4
+    INCY_ZOOM_STEP = 4
+.endif        
         TXA               ; Retreive joy input from X.
         AND #$01          ; Up
         BNE chk_zoom_OUT
@@ -2684,7 +3007,7 @@ chk_zoom_IN:
         STA incx_lr_prev+1
         LDA incx_lr
         STA incx_lr_prev
-        SBC #4
+        SBC #INCX_ZOOM_STEP
         BCS +
         SEC
         LDA #1            ; Max zoom-in reached.
@@ -2697,7 +3020,7 @@ chk_zoom_IN:
         STA incy_lr_prev+1
         LDA incy_lr
         STA incy_lr_prev
-        SBC #4
+        SBC #INCY_ZOOM_STEP
         BCS +
         SEC
         LDA #1            ; Max zoom-in reached.
@@ -2722,7 +3045,7 @@ chk_zoom_OUT:
         JMP end_input
 +       STA incx_lr_prev
         CLC
-        ADC #4
+        ADC #INCX_ZOOM_STEP
         STA incx_lr
         LDA incx_lr+1
         ADC #0
@@ -2732,7 +3055,7 @@ chk_zoom_OUT:
         CLC
         LDA incy_lr
         STA incy_lr_prev
-        ADC #4
+        ADC #INCY_ZOOM_STEP
         STA incy_lr
         LDA incy_lr+1
         ADC #0
@@ -2830,8 +3153,8 @@ end_input:
         LDA #$00
         RTS
 
-prev_timer:
-        .byte 0
+prev_timer:     .byte 0
+input_scratch:  .byte 0
 
 ;===================================================================
 ; Recenter mandelbrot based on newly changed incx and incy.
@@ -3162,6 +3485,8 @@ buf_iters_lr = $E000
 buf_iters_lr = $E000
 .elif BUILD_TED
 buf_iters_lr = $E000
+.elif BUILD_VIC20
+buf_iters_lr = $2000
 .elif BUILD_PET
 buf_iters_lr = $1C00            ; Is that ok ?
 .elif BUILD_ATARI
@@ -3211,6 +3536,8 @@ mul_tab_offset = $4700
 mul_tab_offset = $4700
 .elif BUILD_TED
 mul_tab_offset = $4700
+.elif BUILD_VIC20
+mul_tab_offset = $3700
 .elif BUILD_PET
 mul_tab_offset = $2000
 .elif BUILD_ATARI
