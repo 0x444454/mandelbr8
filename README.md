@@ -86,7 +86,7 @@ This is not a priority now, as I am having fun with porting this to different pl
 
 ### Rendering
 
-The rendering is done in two passes.
+The rendering is done in one or two passes. The second pass is performed if the machine supports "high" resolution.
 
 The first pass is low-resolution and serves two purposes:
 - Quick preview of rendered image.
