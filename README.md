@@ -76,8 +76,11 @@ Currently, a stock Commodore 64 is be able to render the full set preview (first
 
 ### Note about fixed-point precision
 
-My current routines are generic and use Q5.10.  
-However it is important to note that allocating 6 bits (5+sign) for the integer part are overkill for Mandelbrot calculations.  
+There are two different fixed-point notations using "Q" numbers. TI and ARM. I am using ARM notation. More info here:  
+https://en.wikipedia.org/wiki/Q_(number_format)  
+
+My current routines are generic and use Q6.10.  
+However, it is important to note that allocating 6 bits (5+sign) for the integer part are overkill for Mandelbrot calculations.  
 I will change the fixed format allocating more bits to the fractional part in the future.  
 This will allow more zoom-in range.
 
