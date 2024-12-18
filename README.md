@@ -80,7 +80,7 @@ There are two different fixed-point notations using "Q" numbers. TI and ARM. I a
 https://en.wikipedia.org/wiki/Q_(number_format)  
 
 My current routines are generic and use Q6.10.  
-However, it is important to note that allocating 6 bits (5+sign) for the integer part are overkill for Mandelbrot calculations.  
+However, it is important to note that allocating 6 bits (5+sign) for the integer part is overkill for Mandelbrot calculations.  
 I will change the fixed format allocating more bits to the fractional part in the future.  
 This will allow more zoom-in range.
 
