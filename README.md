@@ -66,7 +66,7 @@ This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikip
 Most 8-bit CPUs don't have integer multiplication instructions, let alone floating point ones, which makes classic implementations very slow and frustrating.  
 This algorithm makes the calculation much faster, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
-My algorithm solves this by using Q6.10 fixed-point integers instead of floats. A Q6.10 number uses 6 bits for the signed integer part, and 10 bits for the decimal part.  
+My algorithm solves this by using Q6.10 fixed-point integers instead of floats. A Q6.10 number uses 6 bits for the signed integer part (5+sign), and 10 bits for the decimal part.  
 This allows using fast 16x16 signed integer multiplication algorithms, and then adjust the result back to Q6.10.  
 Before starting, if the machine has at least 64 KB, the program creates a 32 KB table of 16384 Q5.9 unsigned numbers. This speeds up the calculation even more, as no multiplication is needed to square a number, bringing the total number of multiplications to 1 per iteration.  
 Also, if hardware acceleration is available in the system, the program takes advantage of it. For example, if a Kawari chip is present, the calculation time decreases about 25%.  
