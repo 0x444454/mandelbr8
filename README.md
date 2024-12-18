@@ -62,7 +62,7 @@ Note: Tube accelerators not yet supported.
 # ALGORITHM
 
 ### Mandelbrot calculation
-This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia for details).  
+This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the Mandelbrot set).  
 Most 8-bit CPUs don't have integer multiplication instructions, let alone floating point ones, which makes classic implementations very slow and frustrating.  
 This algorithm makes the calculation much faster, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
@@ -73,6 +73,13 @@ Also, if hardware acceleration is available in the system, the program takes adv
 
 Note that the code can be optimized further, and will be in future releases.  
 Currently, a stock Commodore 64 is be able to render the full set preview (first-pass) in about 2 seconds, and the full hi-res image in less than 1.5 minutes.
+
+### Note about fixed-point precision
+
+My current routines are generic and use Q5.10.  
+However it is important to note that allocating 6 bits (5+sign) for the integer part are overkill for Mandelbrot calculations.  
+I will change the fixed format allocating more bits to the fractional part in the future.  
+This will allow more zoom-in range.
 
 ### Rendering
 
