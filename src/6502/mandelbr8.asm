@@ -2995,7 +2995,7 @@ check_userinput:
         CMP #$21
         JMP set_fire
 
-        ; This is for the PET normal keyboard.
+        ; This is for the PET business keyboard.
 scan_pet_business_keyb:
         LDA #4              ; Select row 4
         STA $E810           ; PIA1:PA
