@@ -5,26 +5,28 @@ Currently supported:
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
 - Commodore VIC-20 (16+ KB).
+- Commodore PET (8+ KB, with optional color support).
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
 
-![screenshots](media/mandel8-20241206.jpg)
+![screenshots](media/mandel8-20241218.jpg)
 
 # CONTROLS
 
 The app is simply controlled using a joystick:
 - C64/C128: Joystick port 2.
 - TED machines: Joystick port 1.
+- PET machines: WASD for directions and SHIFT for fire button.
 - Atari XL/XE: Joystick port 1.
 - BBC Micro: Analog joystick port 1 (untested), or cursor keys + shift.
 
 Actions:
 - Up, Down, Left, Right: Move around in complex plane.
-- Button + Up: Zoom in.
-- Button + Down: Zoom out.
-- Button + Right: Increment max iterations (upper limit of 255).
-- Button + Left: Decrement max iterations (lower limit of 1).
+- Fire + Up: Zoom in.
+- Fire + Down: Zoom out.
+- Fire + Right: Increment max iterations (upper limit of 255).
+- Fire + Left: Decrement max iterations (lower limit of 1).
 
 Note: Zooming in over the precision limit can cause a solid color screen to be rendered. In that case, zoom out until you see the image rendered correctly again.
 
@@ -45,6 +47,10 @@ Note: The 80x50 text mode is experimental and has not been tested on a CRT displ
 ### VIC-20
 - First pass: 22x22, 16 colors
 - Second pass: 88x176, 4 colors (multicolor bitmap)
+
+### PET
+- First pass: 40x25 mono, or 40x25 16 color, or 80x25 mono
+- Second pass: [not supported].
 
 ### ATARI XL/XE:
 - First pass: 40x25, 16 shades of gray
