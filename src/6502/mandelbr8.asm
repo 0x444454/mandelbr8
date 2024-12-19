@@ -20,6 +20,8 @@
 ;   2024-11-28: Support BBC Micro. [DDT]
 ;   2024-12-02: Minor bugs fixed. [DDT]
 ;   2024-12-06: Support VIC-20. [DDT]
+;   2024-12-17: Studied Commodore PET system arch. [DDT]
+;   2024-12-18: Support Commodore PET (mono and color). [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
@@ -27,7 +29,7 @@ BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
 BUILD_C128  = 0 ; Commodore 128.
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
-BUILD_PET   = 0 ; WARNING: Commodore PET machines ARE NOT YET SUPPORTED !!!.
+BUILD_PET   = 0 ; Commodore PET (8 KB required).
 BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
 BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
 
@@ -389,6 +391,16 @@ done_expansion:
         ; Initialize unsigned mul tables. This is required also by "print_str", so do it now.
         JSR mulu_init 
 
+.if BUILD_PET
+        ; Detect PET 40 vs 80 columns now, before we print anything.
+        LDX #40
+        LDA $D5
+        CMP #$4F
+        BNE +
+        LDX #80
++       STX pet_columns
+.endif
+
 .if !BUILD_BEEB
         ; Print intro message (first message printed must start with $93=CLS).
         LDA #<str_intro
@@ -603,15 +615,85 @@ no_C128:
         JMP $2400
         * = $2400
 .endif
-        
 
+
+.if BUILD_PET
+        ; Check if we have more than 2 KB video RAM.
+        ; This is required to avoid setting "Color RAM" over mirrored Screen RAM.
+        LDY $8000
+        LDA #$20
+        STA $8000
+        LDA #$00
+        STA $8800
+        CMP $8000
+        BEQ +
+        ; Init extra video RAM in case it's Color RAM.
+        LDA #$0F
+        LDX #$00
+-       STA $8800,X
+        STA $8900,X
+        STA $8A00,X
+        STA $8B00,X
+        INX
+        BNE -
+        LDA #1
++       STA pet_more_than_2KB_vram
+        STY $8000
+
+        ; Print "Press space" msg.
+        LDA #<str_press_space
+        STA str_ptr
+        LDA #>str_press_space
+        STA str_ptr+1
+        JSR print_str
+        
+        LDX #'m'-64
+        STX $8000
+wait_pet_key:
+        LDA #6              ; Select row 8 (either keyboard)
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$02            ; Check for 'C'.
+        BNE no_C
+        ; 'C' pressed. Invert color flag.
+        LDX #'m'-64
+        LDA pet_color
+        EOR #$01
+        STA pet_color
+        BEQ is_mono
+        LDX #'c'-64
+is_mono:
+        STX $8000
+wait_release_C:
+        LDA $E812           ; PIA1:PB
+        AND #$02            ; Check for 'C'.
+        BEQ wait_release_C
+
+no_C:   LDA #8              ; Select row 8 (business keyboard)
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$04            ; Check for 'Space'.
+        BNE +
+        LDA #1              ; business keyboard detected
+        STA pet_business_keyb
+        JMP space_pressed
++       LDA #9              ; Select row 9 (normal keyboard)
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$04            ; Check for 'Space'.
+        BNE wait_pet_key
+space_pressed:    
+
+.endif        
+
+.if !BUILD_PET
         ; Print wait msg.
         LDA #<str_wait
         STA str_ptr
         LDA #>str_wait
         STA str_ptr+1
         JSR print_str
-
+.endif
         
         ; Only build squares table if we have at least 64 KB RAM.
 .if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_ATARI
@@ -658,7 +740,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2024-12-06", $0D
+        .text "version 2024-12-18", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -671,6 +753,25 @@ str_kawari:
 str_wait:
         .text "please wait...", $0D
         .byte $00
+
+str_press_space:
+        .text $0D, "press 'c' to switch mono/color mode.", $0D
+        .text "press 'space' to start...", $0D
+        .byte $00
+;==============================================================
+; PET stuff
+
+.if BUILD_PET
+pet_more_than_2KB_vram:     .byte 0   ; Flag (0:<=2KB, 1: >2KB).
+pet_columns:                .byte 40  ; Number of char columns.
+pet_color:                  .byte 0   ; Flag (0:normal, 1:color).
+pet_business_keyb:          .byte 0   ; Flag (0:normal, 1:business).
+
+pet_scratch:                .byte 0
+
+iter_to_PETSCII: .byte $20, $3A, $2D, $2B, $57, $30, $2A, $51
+                 .byte $54, $5A, $58, $58, $23, $18, $0F, $2E
+.endif
 
 ;==============================================================
 ; Atari stuff
@@ -764,16 +865,16 @@ atari_IRQ:
   BITMAP_START = $1000 ; Charset defined at $1000.
 .elif BUILD_PET
   SCR_RAM      = $8000 ; Video matrix.
-  COL_RAM      = 0     ; No color RAM. Unfortunately, TASS64 has no .ifdef.
+  COL_RAM      = $8800 ; Only works on PET supporting color.
   COL_BORDER   = $FFFF ; Dummy.
   COL_BGND     = $FFFF ; Dummy.
   LORES_W      = 40
   LORES_H      = 25
-  HIRES_W      = 160
-  HIRES_H      = 200
-  HIRES_TILE_W = 4
-  HIRES_TILE_H = 8
-  BITMAP_START = $2000
+  HIRES_W      = 0
+  HIRES_H      = 0
+  HIRES_TILE_W = 0
+  HIRES_TILE_H = 0
+  BITMAP_START = $0000
 .elif BUILD_ATARI
   SCR_RAM      = $0400 ; Video matrix.
   COL_RAM      = $0400 ; ?
@@ -838,7 +939,7 @@ kawari_palette_LPA:
 ; Print zero-terminated string pointed to by (str_ptr), max 255 chars.
 ; This routine trashes registers and changes (str_ptr).
 print_str:
-.if BUILD_VIC20 | BUILD_PET
+.if BUILD_VIC20
         RTS
 .endif
 pr_ch:
@@ -858,7 +959,7 @@ pr_ch:
         ; Clear text screen (and some more :-) with all reverse spaces.
         LDX #$00
 -       
-.if BUILD_C64 | BUILD_C128 | BUILD_TED
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
         LDA #$20           ; Commodore Space
 .else
         LDA #$00           ; Atari Space
@@ -867,7 +968,7 @@ pr_ch:
         STA SCR_RAM+$100,X
         STA SCR_RAM+$200,X
         STA SCR_RAM+$300,X
-.if COL_RAM && !BUILD_ATARI
+.if COL_RAM && !BUILD_ATARI && !BUILD_PET
         LDA #$71           ; Upper nibble is only used on TED machines for luma.
         STA COL_RAM,X
         STA COL_RAM+$100,X
@@ -885,7 +986,7 @@ pr_ch:
         ; ASCII char. Convert to screen code.
         CLC
         CMP #32
-.if BUILD_C64 | BUILD_C128 | BUILD_TED
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET 
         BPL +
         ADC #128 ; Commodore
 .else
@@ -899,7 +1000,7 @@ pr_ch:
         CMP #97
         BPL +
         SEC
-.if BUILD_C64 | BUILD_C128 | BUILD_TED      
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET    
         SBC #64
 .else
         SBC #32 ; ATARI
@@ -907,7 +1008,7 @@ pr_ch:
         JMP done_conv
 +       CMP #128
         BPL done_conv
-.if BUILD_C64 | BUILD_C128 | BUILD_TED       
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET    
         SEC
         SBC #32
 .endif        
@@ -933,13 +1034,20 @@ pr_end:
 
 calc_scr_addr:
         ; Default to 40 columns. Mul by 40.
+.if BUILD_PET
+        LDA pet_columns
+.else        
         LDA #40
+.endif        
         STA x0
+.if BUILD_C128        
         LDA mode
         AND #MODE_VDC
         BEQ +
         ASL x0             ; Actually, it is 80 columns.
-+       LDA cursor_y
++       
+.endif
+        LDA cursor_y
         STA y0
         LDA #$00           ; 256x256 chars will be enough for everyone...
         STA x1
@@ -1022,26 +1130,38 @@ nxt_page:
 
         LDA mode
         AND #MODE_VIC2 | MODE_KAWARI
-        BEQ +
+        BEQ no_vic2_or_kawari
         LDX #$00
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET        
-        LDA #$A0 ; Commodore: Use reverse spaces.
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
+        LDA #$A0 ; Use reverse spaces.
 .else
-        LDA #$20 ; Atari: Use spaces.
+        LDA #$20 ; Use spaces.
 .endif
 -       STA SCR_RAM,X
         STA SCR_RAM+$100,X
         STA SCR_RAM+$200,X
         STA SCR_RAM+$300,X
+.if BUILD_PET
+        LDY pet_columns
+        CPY #80
+        BNE +
+        STA SCR_RAM+$400,X
+        STA SCR_RAM+$500,X
+        STA SCR_RAM+$600,X
+        STA SCR_RAM+$700,X        
++        
+.endif
+
         INX
         BNE - ; Print till zero term or max 256 chars.
         ; Clear attribs (and some more) to white.
         LDX #$00
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET        
+.if BUILD_C64 | BUILD_C128 | BUILD_TED       
         LDA #$71 ; Commodore: White (upper nibble is only used by TED for luma).
 .else
         LDA #$00 ; Atari: Black.
 .endif
+
 .if COL_RAM        
 -       STA COL_RAM,X
         STA COL_RAM+$100,X
@@ -1051,7 +1171,7 @@ nxt_page:
         BNE - ; Print till zero term or max 256 chars.
 .endif        
         RTS
-+   
+no_vic2_or_kawari:  
 
 .if BUILD_C128
         LDA mode
@@ -1862,6 +1982,8 @@ tmp_conv:           .byte 0
         * = $1C00
 .elif BUILD_VIC20
         * = $3000
+.elif BUILD_PET
+        * = $1200
 .else
         * = $4000
 .endif
@@ -1960,16 +2082,30 @@ nxt_pass:
         STA screenw+1
         STA screenh+1
         LDA #LORES_W
+.if BUILD_PET
+        LDX pet_columns
+        CPX #80
+        BNE +
+        ASL
+        CLC
+        ROR incx
++        
+.endif        
         STA screenw
         STA tilew
         LDA #LORES_H
         STA screenh
         STA tileh
+        ; In low-res we might want to also set Screen RAM (e.g. PET machines).
+        LDA #<SCR_RAM
+        STA sram_ptr
+        LDA #>SCR_RAM
+        STA sram_ptr+1
         ; In lo-res we write directly to Color RAM after calculating a pixel.
         LDA #<COL_RAM
         STA cram_ptr
         LDA #>COL_RAM
-        STA cram_ptr+1  
+        STA cram_ptr+1
         JMP first_tile
 
 hi_res:
@@ -2327,13 +2463,31 @@ found_color:
         AND #$0F
 .if BUILD_TED
         ORA #$60          ; Set luma to 6 (pastel colors) to conceal TED multicolor limitations.
-.endif ;BUILD_TED    
+.elif BUILD_PET
+        AND #$0F
+        TAX
+        LDA pet_color
+        BNE no_PETSCII
+        ; Use table to convert iters to PETSCII.
+        LDA iter_to_PETSCII,X   ; Fetch PETSCII from table.
+        LDY #0
+        STA (sram_ptr),Y  ; Set Screen RAM
+no_PETSCII:        
+        INC sram_ptr
+        BNE +
+        INC sram_ptr+1
++       
+        LDA pet_more_than_2KB_vram
+        BEQ no_CRAM
+        TXA               ; Retreive color.
+.endif
         LDY #0
         STA (cram_ptr),Y  ; Set color
         INC cram_ptr
         BNE +
         INC cram_ptr+1
 +       JMP nxt_point
+no_CRAM:
 no_VIC2:
 .if BUILD_C128
         LDA mode
@@ -2516,7 +2670,6 @@ wait:
     
         RTS ; EXIT
 
-
 ; Variables in page 0 for faster access.
 var_bytes   = $a0
 iter        = var_bytes +  0
@@ -2559,9 +2712,10 @@ squares     = var_words + 36   ; Squares table pointers (Q5.9*Q5.9 = Q6.10).
 str_ptr     = var_words + 38   ; Current char of string to print.
 scr_ptr     = var_words + 40   ; Curren screen pointer of string print routine.
 bmp_ptr     = var_words + 42   ; Curren bitmap pointer (hi-res).
-cram_ptr    = var_words + 44   ; Color RAM ptr.
-t_ax        = var_words + 46   ; Current tile ax (upper-left corner x).
-t_ay        = var_words + 48   ; Current tile ay (upper-left corner y).
+sram_ptr    = var_words + 44   ; Screen RAM ptr.
+cram_ptr    = var_words + 46   ; Color RAM ptr.
+t_ax        = var_words + 48   ; Current tile ax (upper-left corner x).
+t_ay        = var_words + 50   ; Current tile ay (upper-left corner y).
 
   
   
@@ -2804,6 +2958,83 @@ check_userinput:
         BCC +
         ORA #$08            ; [000FRLDU]
 +
+.elif BUILD_PET
+        ; PET user port joystick input (bitmap same as C64).
+        ;LDA $E84F
+        ;AND #$1F
+        
+        ; Keyboard SHIFT=fire, WASD=dirs. Read bits are active low (already ok for our standard format: [xxxFRLDU]).
+        LDA pet_business_keyb
+        BNE scan_pet_business_keyb
+        
+        ; This is for the PET normal keyboard.
+        LDA #3              ; Select row 3
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$01            ; Bit 0 is 'W' (UP).
+        STA input_scratch   ; [0000000U]
+        LDA #4              ; Select row 4
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$03            ; Bit 0 is 'A' (LEFT), bit 1 is 'D' (RIGHT).
+        ASL
+        ASL
+        ORA input_scratch   ; [0000RL0U]
+        STA input_scratch
+        LDA #5              ; Select row 5
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$01            ; Bit 0 is 'S' (DOWN).
+        ASL
+        ORA input_scratch   ; [0000RLDU]
+        STA input_scratch
+        LDA #8              ; Select row 8
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$21            ; Bit 0 is L-Shift, bit 5 is R-Shift (use both for FIRE).
+        CMP #$21
+        JMP set_fire
+
+        ; This is for the PET normal keyboard.
+scan_pet_business_keyb:
+        LDA #4              ; Select row 4
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        ROR                 ; Shift bit 1 ('W') to bit 0.
+        AND #$01            ; Check for 'W' (UP).
+        STA input_scratch   ; [0000000U]
+        LDA #3              ; Select row 3
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$03            ; Bit 0 is 'A' (LEFT), bit 1 is 'D' (RIGHT).
+        ASL
+        ASL
+        ORA input_scratch   ; [0000RL0U]
+        STA input_scratch
+        LDA #2              ; Select row 2
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$02            ; Bit 1 is 'S' (DOWN).
+        ORA input_scratch   ; [0000RLDU]
+        STA input_scratch
+        LDA #6              ; Select row 6
+        STA $E810           ; PIA1:PA
+        LDA $E812           ; PIA1:PB
+        AND #$41            ; Bit 0 is L-Shift, bit 6 is R-Shift (use both for FIRE).
+        CMP #$41
+
+        ; This is for both normal and business keyboards.
+set_fire:        
+        BNE shift_pressed   ; Keep bit 4 of result set to 0 (FIRE pressed).
+        LDA #$10            ; Unselect FIRE.
+        ORA input_scratch
+        STA input_scratch
+shift_pressed:
+        LDA input_scratch   ; [000FRLDU]
+
+        
+done_pet_keyboard:
+        
 .elif BUILD_ATARI
         ; Atari joystick input.
         LDA $D300           ; PIA:PORTA[3..0] is joy-1 directions [R,L,D,U]. Active low.
@@ -2955,6 +3186,8 @@ yes_input:
         LDA $FF03         ; Get TED Timer #1
 .elif BUILD_VIC20
         LDA $9115         ; Get Timer #1
+.elif BUILD_PET
+        LDA $E845         ; Get Timer #1
 .elif BUILD_ATARI
         LDA frame_couter  ; Get 
 .elif BUILD_BEEB
@@ -3539,7 +3772,7 @@ mul_tab_offset = $4700
 .elif BUILD_VIC20
 mul_tab_offset = $3700
 .elif BUILD_PET
-mul_tab_offset = $2000
+mul_tab_offset = $800
 .elif BUILD_ATARI
 mul_tab_offset = $4700
 .elif BUILD_BEEB
@@ -3745,4 +3978,3 @@ mulu_init:
     rts
     
 END_ADDRESS:
-    
