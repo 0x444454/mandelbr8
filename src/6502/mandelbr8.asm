@@ -3,6 +3,8 @@
 ;
 ; https://github.com/0x444454/mandelbr8
 ;
+; Use 64TASS Assembler.
+;
 ; Revision history [authors in square brackets]:
 ;   2024-11-07: First simple test loop. [DDT]
 ;   2024-11-08: Unoptimized C64 version. [DDT]
@@ -22,6 +24,10 @@
 ;   2024-12-06: Support VIC-20. [DDT]
 ;   2024-12-17: Studied Commodore PET system arch. [DDT]
 ;   2024-12-18: Support Commodore PET (mono and color). [DDT]
+;   2025-02-13: Changed format to Q5.11 for increased zoom range. Fixed comments. [DDT]
+;   2025-02-15: Added support for C128 VDC 160x100 (64KB VDC VRAM required). [DDT]
+;   2025-02-24: Studying CBM2 machines and 6509 CPU to support B128. [DDT]
+;   2025-02-25: Support for B128. [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
@@ -30,8 +36,14 @@ BUILD_C128  = 0 ; Commodore 128.
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
 BUILD_PET   = 0 ; Commodore PET (8 KB required).
+BUILD_B128  = 0 ; Commodore B128 (CBM 610).
 BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
 BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
+
+CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUILD_B128 + BUILD_ATARI + BUILD_BEEB
+.if CHECK_BUILD < 1 || CHECK_BUILD > 1
+    .error "ENABLE ONE AND ONLY ONE BUILD."
+.endif
 
 ; BEGIN: Commodore machines -----------------
 .if BUILD_C64
@@ -44,15 +56,28 @@ BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
   * = $1201   ; VIC-20 (8+ KB)
 .elif BUILD_PET
   * = $401    ; PET.
+.elif BUILD_B128
+  * = $03     ; B128
+; END: Commodore machines -----------------
 .elif BUILD_ATARI
   * = $1800   ; Atari XL/XE
 .elif BUILD_BEEB
   LOAD_ADDRESS = $1800   ; BBC Micro
 .endif
   
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_VIC20 | BUILD_PET
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_VIC20 | BUILD_PET | BUILD_B128
   .word end_BASIC
   .word 10
+
+.if BUILD_B128
+; POKE this in to change code exe bank:
+;       LDA #$01
+;       STA $00
+    .text                             $97,$34,$31,$2C,$31,$36,$39,$3A,$97 ; POKE41,169:POKE
+    .text $34,$32,$2C,$31,$3A,$97,$34,$33,$2C,$31,$33,$33,$3A,$97,$34,$34 ; 42,1:POKE43,133:POKE44
+    .text $2c,$30,$3A                                                     ; ,0:
+.endif
+
   .byte $9e ; SYS
 
   .if BUILD_C64  
@@ -65,6 +90,8 @@ BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
     .text "4621", $00 ; VIC-20
   .elif BUILD_PET
     .text "1037", $00 ; PET
+  .elif BUILD_B128
+    .text "41",   $00 ; B128
   .endif
 end_BASIC:
   .word 0
@@ -110,9 +137,24 @@ end_BASIC:
 
         
 main:
+.if BUILD_B128
+        ; 4 NOPs to align main code after poked-in bank switch.
+        NOP
+        NOP
+        NOP
+        NOP
         ; Disable interrupts.
         SEI
-
+        ; Switch data to bank 1.
+        LDA #1
+        STA $01
+        ; Get out of page 0 and page 1.
+        JMP $0200
+        * = $0200
+.else
+        ; Disable interrupts.
+        SEI
+.endif        
 
 .if BUILD_BEEB
         LDA #MODE_BEEB
@@ -181,8 +223,6 @@ main:
         INX
         BNE -
 
-;j: jmp j
-;  RTS
         JMP done_BEEB
         
 
@@ -391,6 +431,7 @@ done_expansion:
         ; Initialize unsigned mul tables. This is required also by "print_str", so do it now.
         JSR mulu_init 
 
+
 .if BUILD_PET
         ; Detect PET 40 vs 80 columns now, before we print anything.
         LDX #40
@@ -398,8 +439,15 @@ done_expansion:
         CMP #$4F
         BNE +
         LDX #80
-+       STX pet_columns
++       STX cbm_columns
 .endif
+
+
+.if BUILD_B128
+        LDA #80
+        STA cbm_columns
+.endif
+
 
 .if !BUILD_BEEB
         ; Print intro message (first message printed must start with $93=CLS).
@@ -494,61 +542,64 @@ no_kawari:
         ; Check for 80-col mode.
         LDA $D7
         AND #$80
-        BEQ no_C128_80col
+        BEQ no_VDC
+    
+        ; We are using the VDC (8563 or 8568).
         LDA $D030          ; Enable 2 MHz mode.
         ORA #$01
         STA $D030
         LDA #MODE_VDC
         STA mode
+        
+        ; Enable 64K mode for VRAM amount probe.
+        LDX #$1C            ; VDC[CB]: [7..5] = Character base address (A15-A13); [4] = RAM-Type.
+        LDA #$20            ; Set Character base address to $2000.
+        ORA #$10            ; Set RAM-Type to 4464 (64 KBytes).
+        JSR vdc_reg_write
+        
+        ; Check VDC VRAM available (16KB or 64KB).
+        LDA #37             ; Use prime number for one-shot check.
+        LDX #$FF            ; X: addr [LO]
+        LDY #$07            ; Y: addr [HI]
+        JSR vdc_mem_write
+        LDX #$FF            ; X: addr [LO]
+        LDY #$47            ; Y: addr [HI]
+        JSR vdc_mem_read
+        CMP #37
+        BEQ no_vdc_64K
 
-        ; Setup 80x50 chars mode (each char is 8x4).
-        ; NOTE: This has not been tested on a CRT (only in VICE).
-        LDX #$09            ; VDC[CTV]: Rasterlines per char row. (Default 7).
-        LDA #$03
-        JSR vdc_write
+        ; VDC has 64K
+        LDA #$01
+        STA vdc_has_64K
 
-        LDX #$0C            ; VDC[DSh]: Display start HI. (Default $00).
-;JSR vdc_read
-;JSR print_A_hex 
+no_vdc_64K:
+
+        ; Clear VDC screen.
         LDA #$00
-        JSR vdc_write
-        LDX #$0D            ; VDC[DSl]: Display start LO. (Default $00).
-        LDA #$00
-        JSR vdc_write
+        LDY #$00
+        JSR vdc_cls
 
-        LDX #$17            ; VDC[DSl]: Char rasterlines - 1. (Default 8).
-        LDA #$03
-        JSR vdc_write
-
-        LDX #$04           ; VDC[VT]: Vertical Total (char rows - 1). (Default PAL=38, NTSC=32).
-        LDA #63            ; NTSC
-        ;LDA #66            ; PAL?
-        JSR vdc_write
-        
-        LDX #$05           ; VDC[VA]: Vertical Adjust (rasterlines) (Default 0).
-        LDA #0
-        JSR vdc_write
-        
-        LDX #$06           ; VDC[VD]: Vertical Displayed (visible char rows). (Default 25).
-        LDA #50
-        JSR vdc_write
-        
-        LDX #$07           ; VDC[VP]: Vertical Sync Position (Default PAL=32, NTSC=29).
-        LDA #55            ; NTSC
-        ;LDA #52            ; PAL?
-        JSR vdc_write
-        
-        LDX #$14           ; VDC[AAh]: Attribute Address HI (Default=$08).
-        LDA #$10
-        JSR vdc_write
-        LDX #$15           ; VDC[AAl]: Attribute Address LO (Default=$00).
-        LDA #$00
-        JSR vdc_write
-no_C128_80col:
+;        ; Print "PLEASE WAIT..."
+;        LDX #$00            ; X: addr [LO]
+;        LDY #$00            ; Y: addr [HI]
+;-       LDA str_vdc_wait,X
+;        BEQ +
+;        ; X: addr [LO]
+;        JSR vdc_mem_write
+;        INX
+;        BNE -
+;        BEQ +
+;.enc "screen"
+;str_vdc_wait: .text "vdc "
+;str_vdc_mem:  .text "16kb. please wait...", 0
+;.enc "none"
+;+       
+no_VDC:
 .endif ;BUILD_C128
+
 no_C128:
        
-        ; C64 and C128 initialization.
+        ; Common C64 and C128 initialization.
 .if BUILD_C64 | BUILD_C128        
         ; Setup CIA1
         LDA #$FF
@@ -696,9 +747,9 @@ space_pressed:
 .endif
         
         ; Only build squares table if we have at least 64 KB RAM.
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_ATARI
-        ; Initialize Q5.9 squares table.
-        JSR init_squares_q5_9
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_ATARI | BUILD_B128
+        ; Initialize Q4.10 squares table.
+        JSR init_squares_q4_10
 .endif
 
 
@@ -740,7 +791,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2024-12-18", $0D
+        .text "version 2025-02-25", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -759,11 +810,10 @@ str_press_space:
         .text "press 'space' to start...", $0D
         .byte $00
 ;==============================================================
-; PET stuff
+; PET and CBM-II (B128) stuff
 
-.if BUILD_PET
+.if BUILD_PET | BUILD_B128
 pet_more_than_2KB_vram:     .byte 0   ; Flag (0:<=2KB, 1: >2KB).
-pet_columns:                .byte 40  ; Number of char columns.
 pet_color:                  .byte 0   ; Flag (0:normal, 1:color).
 pet_business_keyb:          .byte 0   ; Flag (0:normal, 1:business).
 
@@ -771,6 +821,8 @@ pet_scratch:                .byte 0
 
 iter_to_PETSCII: .byte $20, $3A, $2D, $2B, $57, $30, $2A, $51
                  .byte $54, $5A, $58, $58, $23, $18, $0F, $2E
+
+cbm_columns:                .byte 40  ; Number of char columns.
 .endif
 
 ;==============================================================
@@ -834,10 +886,10 @@ atari_IRQ:
   COL_BGND     = $D021
   LORES_W      = 40
   LORES_H      = 25
-  HIRES_W      = 160
-  HIRES_H      = 200
-  HIRES_TILE_W = 4
-  HIRES_TILE_H = 8  
+  HIRES_W      = 160   ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_H      = 200   ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_TILE_W = 4     ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_TILE_H = 8     ; NOTE: This is for VIC-II hires (not VDC).
   BITMAP_START = $2000
 .elif BUILD_TED
   SCR_RAM      = $0C00 ; Video matrix
@@ -875,6 +927,18 @@ atari_IRQ:
   HIRES_TILE_W = 0
   HIRES_TILE_H = 0
   BITMAP_START = $0000
+.elif BUILD_B128
+  SCR_RAM      = $D000 ; Video matrix (bank 15).
+  COL_RAM      = $0000 ; No Color RAM.
+  COL_BORDER   = $FFFF ; Dummy.
+  COL_BGND     = $FFFF ; Dummy.
+  LORES_W      = 40    ; This is for the 40-col model (though we currently support only 80-col model).
+  LORES_H      = 25
+  HIRES_W      = 0
+  HIRES_H      = 0
+  HIRES_TILE_W = 0
+  HIRES_TILE_H = 0
+  BITMAP_START = $0000 ; No bitmap.
 .elif BUILD_ATARI
   SCR_RAM      = $0400 ; Video matrix.
   COL_RAM      = $0400 ; ?
@@ -903,13 +967,18 @@ atari_IRQ:
 
 
 ; The following is a bitmask, for faster checks.
-MODE_VIC2     =   $01
+MODE_VIC      =   $01       ; VIC-like video. E.g. VIC, VIC-II, TED, PET, et cetera.
 MODE_KAWARI   =   $02
 MODE_VDC      =   $04
 MODE_BEEB     =   $08
 
-mode:    .byte MODE_VIC2 ; Default to VIC-II mode.
-res:     .byte 0         ; 0 if text/lo-res, 1 if hi-res. Default to text/lo-res.
+mode:           .byte MODE_VIC  ; Default to VIC mode.
+res:            .byte 0         ; 0 if text/lo-res, 1 if hi-res. Default to text/lo-res.
+
+.if BUILD_C128
+vdc_has_64K:            .byte 0     ; Boolean: 0=false; non-0=true.
+vdc_hires_even_color:   .byte 0     ; Color of current hires even pixel.
+.endif
 
 .if BUILD_C64
 kawari_palette_RGB:
@@ -939,54 +1008,45 @@ kawari_palette_LPA:
 ; Print zero-terminated string pointed to by (str_ptr), max 255 chars.
 ; This routine trashes registers and changes (str_ptr).
 print_str:
+
 .if BUILD_VIC20
+        ; Unimplemented on VIC-20.
         RTS
 .endif
+
 pr_ch:
-        LDY #$00           ; Clear index.
-        LDA (str_ptr), Y   ; Load the next char from the message.
-        BEQ pr_end         ; If character is 0 (end of string), jump to end
+        LDY #0             ; Clear index.
+        LDA (str_ptr),Y    ; Load the next char from the message.
+        BNE pr_no_EOS
+        ; If character is 0 (end of string), return.
+        RTS
+
+pr_no_EOS:
         CMP #$0D           ; <CR>
-        BNE +
+        BNE pr_no_CR
         LDA #0
         STA cursor_x
         INC cursor_y
         JSR calc_scr_addr
         JMP done_char
-+       
+pr_no_CR:       
         CMP #$93           ; <CLS>
-        BNE +
-        ; Clear text screen (and some more :-) with all reverse spaces.
-        LDX #$00
--       
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
-        LDA #$20           ; Commodore Space
-.else
-        LDA #$00           ; Atari Space
-.endif        
-        STA SCR_RAM,X
-        STA SCR_RAM+$100,X
-        STA SCR_RAM+$200,X
-        STA SCR_RAM+$300,X
-.if COL_RAM && !BUILD_ATARI && !BUILD_PET
-        LDA #$71           ; Upper nibble is only used on TED machines for luma.
-        STA COL_RAM,X
-        STA COL_RAM+$100,X
-        STA COL_RAM+$200,X
-        STA COL_RAM+$300,X
-.endif ; def COL_RAM
-        INX
-        BNE -
+        BNE pr_no_CLS
+
+        JSR clear_screen
+
+        ; End clear screen. Reset cursor.
         LDA #$00
         STA cursor_x
         STA cursor_y
         JSR calc_scr_addr
         JMP done_char
-+       
+
+pr_no_CLS:       
         ; ASCII char. Convert to screen code.
         CLC
         CMP #32
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET 
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128
         BPL +
         ADC #128 ; Commodore
 .else
@@ -1000,7 +1060,7 @@ pr_ch:
         CMP #97
         BPL +
         SEC
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET    
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128  
         SBC #64
 .else
         SBC #32 ; ATARI
@@ -1008,7 +1068,7 @@ pr_ch:
         JMP done_conv
 +       CMP #128
         BPL done_conv
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET    
+.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128
         SEC
         SBC #32
 .endif        
@@ -1017,7 +1077,42 @@ pr_ch:
 done_conv:
         ; Normal screen code.
         LDY #$00
+.if BUILD_C128
+        LDX mode
+        CPX #MODE_VDC
+        BEQ set_char_VDC
+        ; C128 VIC-IIe
         STA (scr_ptr),Y
+        JMP +
+set_char_VDC:
+        ; C128 VDC
+        PHA
+        LDA scr_ptr+1
+        SEC
+        SBC #$04
+        TAY             ; Y: VRAM addr [HI]
+        LDX scr_ptr     ; X: VRAM addr [LO]
+        PLA             ; A: Byte value to write.
+    ;LDA #$00
+    ;TAX
+    ;TAY
+        JSR vdc_mem_write
++
+.elif BUILD_B128
+        ; B128: Switch "LDA/STA (zp),Y" to bank 15 (ROM and I/O).
+        PHA
+        LDA #15
+        STA $01
+        PLA
+        STA (scr_ptr),Y
+        ; Switch back to bank 1.
+        LDA #1
+        STA $01
+.else
+        ; Other machines.
+        STA (scr_ptr),Y
+.endif        
+        
 done_char_move_pos:
         INC cursor_x
         INC scr_ptr
@@ -1032,11 +1127,12 @@ done_char:
 pr_end:
         RTS
 
+
 calc_scr_addr:
         ; Default to 40 columns. Mul by 40.
-.if BUILD_PET
-        LDA pet_columns
-.else        
+.if BUILD_PET | BUILD_B128
+        LDA cbm_columns
+.else
         LDA #40
 .endif        
         STA x0
@@ -1070,6 +1166,30 @@ cursor_y:   .byte 0
 
 ;------------- clear screen -------------
 clear_screen:
+.if BUILD_B128
+        ; B128 clear screen.
+        LDA #15
+        STA $1
+        LDA #<SCR_RAM
+        STA $04
+        LDA #>SCR_RAM
+        STA $05
+        LDY #0
+cls_B128_page:        
+        LDA #' '
+cls_B128_b:
+        STA ($04),Y
+        INY
+        BNE cls_B128_b
+        INC $05
+        LDA $05
+        CMP #$D8            ; End of SCR_RAM.
+        BNE cls_B128_page
+        LDA #1
+        STA $1
+        RTS
+.endif
+
 .if BUILD_BEEB
         ; Just clear the entire bitmap: $3000..$7FFF
         LDA #$00
@@ -1129,7 +1249,7 @@ nxt_page:
 .endif
 
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI
+        AND #MODE_VIC | MODE_KAWARI
         BEQ no_vic2_or_kawari
         LDX #$00
 .if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
@@ -1137,12 +1257,14 @@ nxt_page:
 .else
         LDA #$20 ; Use spaces.
 .endif
+
 -       STA SCR_RAM,X
         STA SCR_RAM+$100,X
         STA SCR_RAM+$200,X
         STA SCR_RAM+$300,X
+
 .if BUILD_PET
-        LDY pet_columns
+        LDY cbm_columns
         CPY #80
         BNE +
         STA SCR_RAM+$400,X
@@ -1162,7 +1284,7 @@ nxt_page:
         LDA #$00 ; Atari: Black.
 .endif
 
-.if COL_RAM        
+.if COL_RAM
 -       STA COL_RAM,X
         STA COL_RAM+$100,X
         STA COL_RAM+$200,X
@@ -1177,6 +1299,9 @@ no_vic2_or_kawari:
         LDA mode
         AND #MODE_VDC
         BEQ +
+        ; VDC clear (A=attr, Y=char).
+        LDA #$0F        ; Attr white.
+        LDY #$00        ; Char 0 "@".
         JSR vdc_cls
         RTS
 +   
@@ -1184,74 +1309,6 @@ no_vic2_or_kawari:
    
         RTS
     
-.if BUILD_C128    
-;------------- VDC reg read -------------
-; Inputs
-;   X: Register number
-; Outputs:
-;   A: Value
-
-vdc_read:
-        STX $D600        ; VDC register number.
--       BIT $D600
-        BPL -
-        LDA $D601        ; VDC register data.
-        RTS
-
-;------------- VDC reg write -------------
-; Inputs
-;   X: Register number
-;   A: Value
-
-vdc_write:
-        STX $D600        ; VDC register number.
--       BIT $D600
-        BPL -
-        STA $D601        ; VDC register data.
-        RTS
-
-;------------- VDC clear screen -------------
-vdc_cls:
-        LDX #$12          ; VDC mem addr HI
-        LDA #$00
-        JSR vdc_write
-        INX               ; VDC mem addr LO
-        JSR vdc_write
-        ; Repeat for number of chars to set.
-        LDA #$10          ; Outer counter (16 loops)
-        STA $FF
-        LDY #$00          ; Inner counter (256 loops).
-        LDX #$1F          ; VDC data register number.
-        LDA #$A0          ; Char code to write.
--       JSR vdc_write
-        DEY
-        BNE -
-        DEC $FF
-        BNE -
-        
-        JSR check_userinput
-        
-        LDX #$12          ; VDC mem addr HI
-        LDA #$10
-        JSR vdc_write
-        INX               ; VDC mem addr LO
-        LDA #$00
-        JSR vdc_write
-        ; Repeat for number of attribs to set.
-        LDA #$10          ; Outer counter (16 loops)
-        STA $FF
-        LDY #$00          ; Inner counter (256 loops).
-        LDX #$1F          ; VDC data register number.
-        LDA #$8F          ; Attribute to write.
--       JSR vdc_write
-        DEY
-        BNE -
-        DEC $FF
-        BNE -
-    
-        RTS               ; Return
-.endif ; BUILD_C128
-
 ;------------- Switch lo/hi res -------------
 ; Note: Not all platforms support switching.
 ; Output: Z = 0 if mode switch succeeded (use BNE to branch on success).
@@ -1272,15 +1329,31 @@ switch_res:
 ; Clobbered: A, X
 apply_mode:
         LDA mode
+
 .if BUILD_C64 | BUILD_C128
+    .if BUILD_C128
         CMP #MODE_VDC
         BNE chk_VIC2_res
         ; VDC
         LDA res
-        CMP #$01        ; Hi-res not yet supported on VDC.
+        BNE +
+        ; Set VDC lores mode.
+        JSR vdc_set_lores
+        LDA #$FF            ; Z = 0 (supported).
         RTS
++       ; Set VDC hires mode.
+        LDA vdc_has_64K
+        BEQ vdc_hires_unsupported
+        JSR vdc_set_hires
+        LDA #$FF            ; Z = 0 (supported).
+        RTS
+vdc_hires_unsupported:        
+        LDA #$00            ; Z = 1 (unsupported).
+        RTS
+    .endif
+
 chk_VIC2_res:
-        ;CMP #MODE_VIC2
+        ;CMP #MODE_VIC
         ;BNE chk_KAWARI_res ; Kawari hi-res not yet supported.
         ; VIC2
         LDA res
@@ -1976,6 +2049,644 @@ halves_countdown:   .byte 0
 line_countdown:     .byte 0
 tmp_conv:           .byte 0    
 
+
+;==============================================================
+
+; On VIC-II and TED machines, we need to check if we overlapped bitmap memory (and code will be trashed).
+.if BUILD_C64 || BUILD_C128 || BUILD_TED
+    .if * >= $2000
+        .error "BITMAP MEM OVERLAP"
+    .endif
+.endif
+
+
+.if BUILD_C128    
+;==============================================================
+; C128 VDC ROUTINES - This can overlap bitmap mem.
+; WARNING: PLACE AT THE END OF ALL SUBS TO ALLOW OTHER SUBS TO STAY BELOW $2000 !!!!!!
+;          These routines are to be used with the VDC, so we don't care if the code goes over the VIC-II bitmap area $2000-$3FFF.
+;
+;------------- VDC reg read -------------
+; Inputs
+;   X: Register number
+; Outputs:
+;   A: Value
+
+vdc_reg_read:
+        STX $D600        ; VDC register index.
+-       BIT $D600
+        BPL -
+        LDA $D601        ; VDC register data.
+        RTS
+
+;------------- VDC reg write -------------
+; Inputs
+;   X: Register number
+;   A: Value
+
+vdc_reg_write:
+        STX $D600        ; VDC register index.
+-       BIT $D600
+        BPL -
+        STA $D601        ; VDC register data.
+        RTS
+
+
+;------------- VDC mem read -------------
+; Read a byte from VDC VRAM.
+; Inputs
+;   X: VRAM addr [LO]
+;   Y: VRAM addr [HI]
+; Outputs: A: read value.
+; Clobbered: [none]
+;
+vdc_mem_read:
+        LDA #$12         ; VDC mem addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        STY $D601        ; Set addr HI.
+
+        LDA #$13         ; VDC mem addr LO
+        STA $D600
+-       BIT $D600
+        BPL -
+        STX $D601        ; Set addr LO.
+
+        LDA #$1F         ; VDC data register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA $D601        ; Set mem value.
+
+        RTS
+
+;------------- VDC mem write -------------
+; Write a byte to VDC VRAM.
+; Inputs:
+;   A: Byte to write.
+;   X: VRAM addr [LO]
+;   Y: VRAM addr [HI]
+; Outputs: [none]
+; Clobbered: [none]
+;
+vdc_mem_write:
+        PHA
+        
+        LDA #$12         ; VDC mem addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        STY $D601        ; Set addr HI.
+
+        LDA #$13         ; VDC mem addr LO
+        STA $D600
+-       BIT $D600
+        BPL -
+        STX $D601        ; Set addr LO.
+
+        LDA #$1F         ; VDC data register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        PLA
+        STA $D601        ; Set mem value.
+
+        RTS
+
+
+;------------- VDC mem fill -------------
+; Fill VDC VRAM (hardware blit).
+; Up to 256 bytes can be filled with one call.
+; Inputs:
+;   A: Byte to write.
+;   blt_dst[LO][HI]: Fill start address in VDC memory.
+;   blt_size: Fill size - 1 (bytes).
+;
+; Outputs: [none]
+; Clobbered: [none]
+;
+vdc_mem_fill:
+        PHA
+        PHA
+
+        ; Set block start address.
+        
+        LDA #$12         ; VDC mem addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_dst+1
+        STA $D601        ; Set addr HI.
+
+        LDA #$13         ; VDC mem addr LO
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_dst
+        STA $D601        ; Set addr LO.
+
+        ; Set fill value.
+
+        LDA #$1F         ; VDC data register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        PLA
+        STA $D601        ; Set mem value.
+
+        ; Write a 0 to R$18 "VSS" bit 7, to select the Block-Write mode.
+        LDA #$18         ; VDC "VSS" register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA $D601
+        AND #$7F         ; Clear bit 7 to select Fill op.
+        STA $D601
+
+        ; Write the fill size - 1 to to R$1E "WC", to start the fill.
+        LDA #$1E         ; VDC "WC" register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_size
+        STA $D601        ; Set blit size.
+
+        ; After the fill is completed, R$12/R$13 will contain the last written addr + 1.
+        PLA              ; Restore A.
+        RTS
+
+;------------- VDC mem copy -------------
+; Copy VDC VRAM (hardware blit).
+; Up to 256 bytes can be copied with one call.
+; Inputs:
+;   blt_src[LO][HI]: Copy source start address in VDC memory.
+;   blt_dst[LO][HI]: Copy destination start address in VDC memory.
+;   blt_size: Copy size - 1 (bytes).
+;
+; Outputs: [none]
+; Clobbered: [none]
+;
+vdc_mem_copy:
+        PHA
+
+        ; Set block src start address.
+        
+        LDA #$12         ; VDC mem addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_dst+1
+        STA $D601        ; Set addr HI.
+
+        LDA #$13         ; VDC mem addr LO
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_dst
+        STA $D601        ; Set addr LO.
+
+        ; Write a 1 to R$18 "VSS" bit 7, to select the Block-Copy mode.
+
+        LDA #$18         ; VDC "VSS" register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA $D601
+        ORA #$80         ; Set bit 7 to select Copy op.
+        STA $D601
+
+        ; Set block dst start address.
+        
+        LDA #$20         ; VDC block source addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_src+1
+        STA $D601        ; Set addr HI.
+
+        LDA #$21         ; VDC block source addr HI
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_src
+        STA $D601        ; Set addr LO.
+
+
+        ; Write the copy size - 1 to to R$1E "WC", to start the copy.
+
+        LDA #$1E         ; VDC "WC" register.
+        STA $D600
+-       BIT $D600
+        BPL -
+        LDA blt_size
+        STA $D601        ; Set blit size. 
+
+        ; After the fill is completed, R$12/R$13 will contain the last written addr + 1.
+        PLA              ; Restore A.
+        RTS
+
+
+blt_src:    .word 0
+blt_dst:    .word 0
+blt_size:   .byte 0
+
+
+;------------- VDC clear screen -------------
+; Character mode (lo-res) or bitmap mode (hi-res) CLS routine.
+; This uses VDC hardware acceleration.
+;
+; Inputs:
+;   A: Byte to write to attributes (or set to $FF to skip writing attributes).
+;   Y: Byte to write to char/bitmap.
+;
+; Clobbered: A, Y
+;
+vdc_cls:
+        PHA                 ; Save attrib value.
+        TYA
+        PHA                 ; Save char/bitmap value.
+
+
+        ; Clear screen matrix.
+        
+        LDA #$FF
+        STA blt_size
+        LDA #$00
+        STA blt_dst+1
+        STA blt_dst
+        ; Preset lores.
+        LDY #$10            ; lores [$0000-$0FFF]
+        LDA res
+        BEQ +
+        ; Instead, it's hires.
+        LDY #$40            ; hires [$0000-$3FFF]
++       PLA                 ; Get char/bitmap fill value.
+-       JSR vdc_mem_fill
+        INC blt_dst+1
+        DEY
+        BNE -
+        
+        ; Clear attribs ?
+        PLA
+        CMP #$FF
+        BEQ dont_clear_attribs
+        ; Do clear attribs. Push attrib value back in stack.
+        PHA
+
+        ; Clear attribs.
+        LDA #$00
+        STA blt_dst
+        LDA res             ; Check lores/hires.
+        BNE cla_hr
+        ; lores [$1000-$1FFF]
+        LDA #$10
+        STA blt_dst+1
+        TAY                 ; Clear $10 pages.
+        BNE v_do_cla        ; Branch always
+cla_hr: ; hires [$4000-$5FFF]
+        LDA #$40
+        STA blt_dst+1
+        LDY #$20
+v_do_cla:
+        PLA                 ; Get attrib fill value.
+-       JSR vdc_mem_fill
+        INC blt_dst+1
+        DEY
+        BNE -
+
+dont_clear_attribs:
+        RTS               ; Return
+
+
+;------------- VDC wait until VBlank -------------
+; Wait till end of frame.
+;
+vdc_wait_vb:
+-       LDA $D600
+        AND #$20
+        BEQ -
+        RTS
+
+;------------- VDC set low resolution (80x50) -------------
+; This mode works with 16KB VRAM.
+; Screen:     $0000-$0FFF
+; Attributes: $1000-$1FFF
+; Chars def:  $2000-$3FFF (this is the default and not set here).
+;
+vdc_set_lores:
+        ; Wait for VBlank to minimize glitch.
+        JSR vdc_wait_vb
+        ; Setup 80x50 chars mode (each char is 8x4).
+        ; NOTE: This has not been tested on a CRT (only in VICE).
+        LDX #$09            ; VDC[CTV]: Rasterlines per char row. (Default 7).
+        LDA #$03
+        JSR vdc_reg_write
+
+        LDX #$17            ; VDC[CDV]: Char height rasterlines - 1. (Default 8). Set equal to R$09 for no vertical inter-char spacing.
+        JSR vdc_reg_write
+
+        LDX #$0C            ; VDC[DSh]: Display start HI. (Default $00).
+;JSR vdc_reg_read
+;JSR print_A_hex 
+        LDA #$00
+        JSR vdc_reg_write
+        LDX #$0D            ; VDC[DSl]: Display start LO. (Default $00).
+        LDA #$00
+        JSR vdc_reg_write
+
+        LDX #$04            ; VDC[VT]: Vertical Total (char rows - 1). (Default PAL=38, NTSC=32).
+        LDA #76             ; PAL
+        JSR vdc_reg_write
+        
+        LDX #$05            ; VDC[VA]: Vertical Adjust (rasterlines) (Default 0).
+        LDA #0
+        JSR vdc_reg_write
+        
+        LDX #$06            ; VDC[VD]: Vertical Displayed (visible char rows). (Default 25).
+        LDA #50
+        JSR vdc_reg_write
+        
+        LDX #$07            ; VDC[VP]: Vertical Sync Position (Default PAL=32, NTSC=29).
+        LDA #64             ; PAL
+        JSR vdc_reg_write
+        
+        ; Set attributes at $1000.
+        LDX #$14            ; VDC[AAh]: Attribute Address HI (Default=$08).
+        LDA #$10
+        JSR vdc_reg_write
+        LDX #$15            ; VDC[AAl]: Attribute Address LO (Default=$00).
+        LDA #$00
+        JSR vdc_reg_write
+
+        ; Deactivate bitmap mode.
+        LDX #$19            ; VDC[HSS]: Bitmap [7]; Attributes [6]; Gap fill [5]; Pixel clock (40 Col) [4]; hor smooth scroll.
+        JSR vdc_reg_read
+        AND #$7F            ; Disable bitmap.
+        ORA #$40            ; Enable attributes.
+        JSR vdc_reg_write        
+        
+        ; Set all pixels to 1 for the '@' char (code $00).
+        ; Note that we use 8x4 chars in VDC lores.
+        ; Font starts at $2000.
+        LDY #$20            ; Y: addr [HI]
+        LDX #$00            ; X: addr [LO]
+        LDA #$FF
+-       JSR vdc_mem_write
+        INX
+        CPX #$04            ; Only 4 lines to set.
+        BNE -
+        
+        LDA #$0F            ; Attribute (white).
+        LDY #$00            ; Char ("@").
+        JSR vdc_cls
+
+        RTS
+
+;------------- VDC set high resolution (160x100) -------------
+; This mode requires 64KB VRAM.
+;
+; Bitmap:     $0000-$3E80
+; Attributes: $4000-$5F40
+;
+; Clobbered: A, X, Y
+;
+vdc_set_hires:
+        ; Wait for VBlank to minimize glitch.
+        JSR vdc_wait_vb
+
+        ; Setup 160x100 bitmap mode (each attribute is 8x2, used only for fg/bg attributes).
+        ; NOTE: This has not been tested on a CRT (only in VICE).
+        
+        LDX #$09            ; VDC[CTV]: Rasterlines - 1 per char row. (Default 7).
+        LDA #$01
+        JSR vdc_reg_write
+
+        LDX #$17            ; VDC[CDV]: Char rasterlines - 1. (Default 8). Must be <= R9. Set equal to R$09 for no vertical inter-char spacing.
+        JSR vdc_reg_write
+        
+        ; Set bitmap starting at $0000.
+        LDX #$0C            ; VDC[DSh]: Display start HI. (Default $00).
+        LDA #$00            ; $00 [HI]
+        JSR vdc_reg_write
+        LDX #$0D            ; VDC[DSl]: Display start LO. (Default $00).
+        LDA #$00            ; $00 [LO]
+        JSR vdc_reg_write
+
+        LDX #$04            ; VDC[VT]: Vertical Total (char rows - 1). (Default PAL=38, NTSC=32).
+        LDA #152
+        JSR vdc_reg_write
+        
+        ; R$05: The number of scan lines added to the end of the frame for fine adjustment of the vertical sync rate.
+        LDX #$05            ; VDC[VA]: Vertical Adjust (rasterlines) (Default 0).
+        LDA #3              ; This seems to match the lores position (at least on the VICE emu).
+        JSR vdc_reg_write
+        
+        LDX #$06            ; VDC[VD]: Vertical Displayed (visible char rows). (Default 25).
+        LDA #100    
+        JSR vdc_reg_write
+        
+        LDX #$07            ; VDC[VP]: Vertical Sync Position (Default PAL=32, NTSC=29). Must be > R6.
+        LDA #128
+        JSR vdc_reg_write
+        
+        ; Set attributes at $4000.
+        LDX #$14            ; VDC[AAh]: Attribute Address HI (Default=$08).
+        LDA #$40
+        JSR vdc_reg_write
+        LDX #$15            ; VDC[AAl]: Attribute Address LO (Default=$00).
+        LDA #$00
+        JSR vdc_reg_write
+        
+        ; Activate bitmap mode.
+        LDX #$19            ; VDC[HSS]: Bitmap [7]; Attributes [6]; Gap fill [5]; Pixel clock (40 Col) [4]; hor smooth scroll.
+        JSR vdc_reg_read
+        ORA #$C0            ; Enable both bitmap and attributes.
+        JSR vdc_reg_write
+        
+        ; Copy lores attribs [$1000-$1FFF] to hires attribs [$4000-$5FFF].
+        
+        LDA #$00
+        STA blt_src
+        STA blt_dst
+        LDA #$10
+        STA blt_src+1
+        LDA #$40
+        STA blt_dst+1
+        ; 50 attribute lines of 80 chars each must be expanded 2x vertically.
+        LDA #80
+        STA blt_size
+        LDY #50
+a_lr2hr:
+        LDX #2              ; Expand 2x
+exp4x:  JSR vdc_mem_copy
+        LDA blt_dst
+        CLC
+        ADC #80
+        STA blt_dst
+        BCC +
+        INC blt_dst+1
++       DEX
+        BNE exp4x
+        ; Go to next lores attr row.
+        LDA blt_src
+        CLC
+        ADC #80
+        STA blt_src
+        BCC +
+        INC blt_src+1
++       DEY
+        BNE a_lr2hr
+
+        ; Finally set bitmap to $FF, so the image will look the same as the lo-res screen.
+        
+        LDA #$FF            ; Set A=$FF so vdc_cls does not touch attributes.
+        TAY                 ; Set bitmap to $FF.
+        JSR vdc_cls
+     
+        RTS
+
+
+;------------- Setup Mandelbrot pass using VDC rendering -------------
+;
+vdc_setup_pass:
+        ; VDC common.
+        LDA #0
+        STA screenw+1
+        STA screenh+1    
+        ; Enable iters buffer.
+        LDA #$01
+        STA enable_buf_it
+        
+        ; Check if VDC hi-res.
+        LDA res
+        BNE vdc_hi_res
+
+vdc_lo_res:
+        LDA #1
+        STA num_tiles_w
+        STA num_tiles_h
+        LDA #80
+        STA screenw
+        STA tilew
+        LDA #50
+        STA screenh
+        STA tileh
+        ; Point to start of VDC attributes.
+        LDX #$12          ; VDC mem addr HI
+        LDA #$10
+        JSR vdc_reg_write
+        INX               ; VDC mem addr LO
+        LDA #$00
+        JSR vdc_reg_write
+        RTS
+
+vdc_hi_res:
+        ; VDC hi-res (one single 160x100 tile).
+        LDA #80
+        STA num_tiles_w
+        LDA #50
+        STA num_tiles_h
+        LDA #160
+        STA screenw
+        LDA #100
+        STA screenh
+        LDA #2
+        STA tilew
+        LDA #2
+        STA tileh
+        LDA #2*2 ; Pixels per tile.
+        STA buf_tile_size
+        LSR incx+1
+        ROR incx
+        LSR incy+1
+        ROR incy
+        ; Point bitmap to start of VDC mem ($0000).
+        LDA #$00
+        STA bmp_ptr
+        LDA #$00
+        STA bmp_ptr+1
+        ; Point VDC attr to start of VDC attribs ($4000).
+        LDA #$00
+        STA vdc_attr_ptr
+        LDA #$40
+        STA vdc_attr_ptr+1
+        RTS
+        
+
+;------------- Render a Mandelbrot tile (2x2) with the VDC -------------
+; After this, bmp_ptr needs to point to the next tile.
+;        
+render_tile_VDC:
+        LDX bmp_ptr
+        LDY bmp_ptr+1
+        LDA #4
+        STA vdc_row_count
+        ; Set all 4 bytes of the tile to #$0F (background, foreground).
+vdc_set_tile_bmp:
+        LDA #$0F            ; Value (always $0F): 4 pixels off, 4 pixels on.
+        JSR vdc_mem_write
+        TXA
+        CLC
+        ADC #80
+        TAX
+        BCC +
+        INY
++       DEC vdc_row_count
+        BNE vdc_set_tile_bmp
+        
+        ; Now set attributes.
+        LDX vdc_attr_ptr
+        LDY vdc_attr_ptr+1
+
+        LDA buf_iters_hr+0
+        ASL
+        ASL
+        ASL
+        ASL
+        STA vdc_tmp
+        LDA buf_iters_hr+1
+        AND #$0F
+        ORA vdc_tmp         ; Attribute value to write (two colors, one per nibble).
+    ;LDA #$3F
+        JSR vdc_mem_write
+
+        TXA
+        CLC
+        ADC #80
+        TAX
+        BCC +
+        INY
++
+        LDA buf_iters_hr+2
+        ASL
+        ASL
+        ASL
+        ASL
+        STA vdc_tmp
+        LDA buf_iters_hr+3
+        AND #$0F
+        ORA vdc_tmp         ; Attribute value to write (two colors, one per nibble).
+    ;LDA #$F3
+        JSR vdc_mem_write
+        
+        ; Point to the next tile.
+        INC bmp_ptr
+        BNE +
+        INC bmp_ptr+1
++       ; Point to the next tile.
+        INC vdc_attr_ptr
+        BNE +
+        INC vdc_attr_ptr+1
++        
+        RTS
+ 
+vdc_tmp:       .byte 0
+vdc_row_count: .byte 0
+vdc_attr_ptr:  .word 0
+        
+.endif ; BUILD_C128    
+    
     
 ;------------- Mandelbrot calculation -------------
 .if BUILD_BEEB
@@ -1984,24 +2695,39 @@ tmp_conv:           .byte 0
         * = $3000
 .elif BUILD_PET
         * = $1200
+.elif BUILD_B128
+        * = $2000
 .else
         * = $4000
 .endif
 
 Mandelbrot:
+        FPREC = 11          ; Fixed-point precision.
+
         ; Max iters
         LDA #16
         STA max_iter
-    
-        ; Default coordinates (fixed_point, *1024).
-        start_ax = -2200
-.if BUILD_BEEB
-        ; Center vertically for 256 lines displays.
-        start_ay =  1440
-.else
+
+
+.if BUILD_VIC20
+        ; Default coordinates.
+        start_ax = -2.0*(1<<FPREC)
         ; Center vertically for 200 lines displays.
-        start_ay =  1248
-.endif        
+        start_ay =  1.15*(1<<FPREC)
+.elif BUILD_BEEB
+        ; Center vertically for 256 lines displays.
+        start_ax = -2.2*(1<<FPREC)
+        ; Center vertically for 200 lines displays.
+        start_ay =  1.25*(1<<FPREC)
+.else   ; All other machines.
+        ; Default coordinates.
+        start_ax = -2.2*(1<<FPREC)
+        ; Center vertically for 200 lines displays.
+        start_ay =  1.25*(1<<FPREC)
+.endif
+
+
+      
         
         LDA #<start_ax
         STA ax
@@ -2018,19 +2744,23 @@ Mandelbrot:
         STA incx_lr+1
         STA incy_lr+1    
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI | MODE_BEEB
+        AND #MODE_VIC | MODE_KAWARI | MODE_BEEB
         BEQ +
-        LDA #96             ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
+        LDA #192            ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
         STA incx_lr
-.if BUILD_VIC20
-        ASL incx_lr         ; Double that for VIC-20 char aspect-ratio.
-.endif        
         STA incy_lr
+.if BUILD_VIC20
+        ;ASL incx_lr        ; Double that for VIC-20 char aspect-ratio.
+        LDA #248            ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
+        STA incx_lr
+        LDA #224
+        STA incy_lr
+.endif        
         JMP done_incs
 +       LDA mode
         CMP #MODE_VDC
         BNE +
-        LDA #50
+        LDA #96            ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
         STA incx_lr
         STA incy_lr
         JMP done_incs
@@ -2064,11 +2794,19 @@ nxt_pass:
         STA incy
         LDA incy_lr+1
         STA incy+1
+        ; Reset tile num.
+        LDA #0
+        STA tile_num
+        STA tile_num+1
+        STA screenw+1
+        STA screenh+1        
         ; Handle mode-dependent params.
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI | MODE_BEEB ; Check for VIC2 and similar chips.
+        AND #MODE_VIC | MODE_KAWARI | MODE_BEEB ; Check for VIC2 and similar chips.
         BNE +
         JMP no_VIC2ish_setup
+
+      
         ;------ VIC2
 +       LDA res
         BNE hi_res
@@ -2076,14 +2814,9 @@ nxt_pass:
         LDA #1
         STA num_tiles_w
         STA num_tiles_h
-        LDA #0
-        STA tile_num
-        STA tile_num+1
-        STA screenw+1
-        STA screenh+1
         LDA #LORES_W
-.if BUILD_PET
-        LDX pet_columns
+.if BUILD_PET | BUILD_B128
+        LDX cbm_columns
         CPX #80
         BNE +
         ASL
@@ -2109,7 +2842,7 @@ nxt_pass:
         JMP first_tile
 
 hi_res:
-        ; Hi-res mode second-pass (4x8 multicolor tile).
+        ; Hi-res mode second-pass.
         ; Set tile width and height.
         LDA #<BITMAP_START
         STA bmp_ptr
@@ -2180,6 +2913,7 @@ hi_res:
         ADC #0
         STA ay+1
         JMP first_tile
+
 no_VIC2ish_setup:
 
 .if BUILD_C128
@@ -2187,27 +2921,7 @@ no_VIC2ish_setup:
         CMP #MODE_VDC
         BNE +
         ;------ VDC
-        ; VDC lo-res (one single 80x50 tile).
-        LDA #1
-        STA num_tiles_w
-        STA num_tiles_h
-        LDA #0
-        STA screenw+1
-        STA screenh+1    
-        LDA #80
-        STA screenw
-        STA tilew
-        LDA #50
-        STA screenh
-        STA tileh
-        ; Point to start of VDC attributes.
-        LDX #$12          ; VDC mem addr HI
-        LDA #$10
-        JSR vdc_write
-        INX               ; VDC mem addr LO
-        LDA #$00
-        JSR vdc_write
-        JMP first_tile
+        JSR vdc_setup_pass
 +
 .endif ; BUILD_C128
 
@@ -2267,6 +2981,7 @@ done_it_buf:
     
 ; Calculate current point (cx, cy).
 calc_point:
+    ;INC $D020
         LDA #0   ; Reset iteration counter.
         STA iter
         STA zx   ; Reset (zx, zy)
@@ -2298,41 +3013,6 @@ no_recalc:
         ADC cy+1
         STA zy+1
     
-        ; Kawari code for squares commented out.
-        ; This should be more precise than our table, but is it really faster ?
-        ;
-        ; zx2 = zx * zx
-        ;LDA mode
-        ;AND #MODE_KAWARI | MODE_KAWARI
-        ;BEQ zx2_sw
-        ;; Use Kawari hardware muls.
-        ;LDA zx
-        ;STA $D030       ; OP_1_LO
-        ;STA $D032       ; OP_2_LO
-        ;LDA zx+1
-        ;STA $D02F       ; OP_1_HI
-        ;STA $D031       ; OP_2_HI
-        ;LDA #2          ; Kawari S_MULT operator.
-        ;STA $D033       ; This triggers the operation.
-        ;; Result is immediately available.
-        ;; Divide result by 1024 (i.e. divide RESULT_HL, RESULT_LH by 4).
-        ;LDA $D030       ; RESULT_HL
-        ;STA $D02F       ; OP1_HI
-        ;LDA $D031       ; RESULT_LH
-        ;STA $D030       ; OP1_LO
-        ;LDA #$00
-        ;STA $D031       ; OP2_HI
-        ;LDA #$04
-        ;STA $D032       ; OP2_LO
-        ;LDA #1          ; Kawari U_DIV operator.
-        ;STA $D033       ; This triggers the operation.
-        ;; Result is immediately available.
-        ;LDA $D032       ; RESULT_LL
-        ;STA zx2
-        ;LDA $D031       ; RESULT_LH
-        ;STA zx2+1
-        ;JMP zx2_done
-    
 zx2_sw:    
         LDA zx
         STA x0
@@ -2340,10 +3020,12 @@ zx2_sw:
         LDA zx+1
         STA x1
         STA y1
-.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB        
-        JSR multiply_Q6_10_signed ; [z1..z2] = zx*zx
+.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB
+        ; These have not enough mem for squares table.
+        JSR multiply_Q5_11_signed ; [z1..z2] = zx*zx
 .else
-        JSR square_Q10_6
+        ; Use squares table.
+        JSR square_Q5_11
 .endif        
         LDA z1
         STA zx2
@@ -2358,10 +3040,11 @@ zx2_done:
         LDA zy+1
         STA x1
         STA y1
-.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB         
-        JSR multiply_Q6_10_signed ; [z1..z2] = zy*zy
+.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB
+        ; These have not enough mem for squares table.
+        JSR multiply_Q5_11_signed ; [z1..z2] = zy*zy
 .else        
-        JSR square_Q10_6
+        JSR square_Q5_11
 .endif        
         LDA z1
         STA zy2
@@ -2369,14 +3052,14 @@ zx2_done:
         STA zy2+1
 
         ; Check for divergence (zx2 + zy2 > 4.000).
-        ; Note: In Q6.10 the number 4.000 = $1000.
+        ; Note: In Q5.11 the number 4.000 = $2000. Check only zy2.
         CLC
         LDA zx2   ; Maybe not needed.
         ADC zy2   ; Maybe not needed.
         LDA zx2+1
         ADC zy2+1
-        CMP #$10  ; Just check high byte.
-        BCC +
+        CMP #$20  ; Just check high byte.
+        BCC +     ; BLT
         JMP found_color ; Early exit (not black if >= 4.000).
 +    
         ; Before overwriting zx, set it for the next muls operation.
@@ -2421,10 +3104,14 @@ zx2_done:
     
 zxzy_sw: 
         ; No need to setup zx [x0,x1] and zy [y0,y1]. They are already there.
-        JSR multiply_16bit_signed ; [z0..z3] = zx*zy*1024
+        JSR multiply_16bit_signed ; [z0..z3] = zx*zy <<22
 
-zxzy_done:    
-        LDA z3
+zxzy_done:
+        LDA z3       ; We need Q5.11, so discard z0 (8 bits) and shift-r twice (2 bits) to get 2*result <<11.
+        CMP #$80     ; Set carry if result is negative.
+        ROR z3
+        ROR z2
+        ROR z1        
         CMP #$80     ; Set carry if result is negative.
         ROR z3
         ROR z2
@@ -2446,32 +3133,51 @@ found_color_black:
         STA iter
 found_color:
         LDA iter
+        LDY enable_buf_it
+        BEQ skip_buf_it
         LDY #0
         STA (buf_it_ptr),Y  ; Save iters to pixel iterations buffer.
         INC buf_it_ptr
         BNE +
         INC buf_it_ptr+1
-+       ; If we are in hi-res mode, we do not set Color RAM here.
++       
+skip_buf_it:
+
+        ; If we are in hi-res mode, we do not set Color RAM here.
         LDA res
         BNE skip_ColorRAM
+
         ; Lo-res.
         LDA mode
-        AND #MODE_VIC2 | MODE_KAWARI
+        AND #MODE_VIC | MODE_KAWARI
         BEQ no_VIC2
-        ; MODE_VIC2
+        ; MODE_VIC
         LDA iter
         AND #$0F
 .if BUILD_TED
         ORA #$60          ; Set luma to 6 (pastel colors) to conceal TED multicolor limitations.
-.elif BUILD_PET
+.elif BUILD_PET | BUILD_B128
         AND #$0F
         TAX
         LDA pet_color
         BNE no_PETSCII
         ; Use table to convert iters to PETSCII.
         LDA iter_to_PETSCII,X   ; Fetch PETSCII from table.
+    .if BUILD_B128
+        ; B128
+        ; Switch to Bank 15
+        LDY #15
+        STY $01
         LDY #0
         STA (sram_ptr),Y  ; Set Screen RAM
+        ; Switch to Bank 1
+        LDY #1
+        STY $01
+    .else
+        ; PET
+        LDY #0
+        STA (sram_ptr),Y  ; Set Screen RAM
+    .endif
 no_PETSCII:        
         INC sram_ptr
         BNE +
@@ -2493,11 +3199,33 @@ no_VIC2:
         LDA mode
         CMP #MODE_VDC
         BNE +
-        ; MODE_VDC
+        ; MODE_VDC (lores).
+; VDC_to_VIC-II debug
+;    LDA cram_ptr+1
+;    CMP #$D8
+;    BCS v1
+;    LDA #0
+;    STA cram_ptr
+;    LDA #$D8
+;    STA cram_ptr+1
+;v1: LDA pixely
+;    AND #1
+;    BNE skip_cramme
+;    LDA pixelx
+;    AND #1
+;    BNE skip_cramme    
+;    LDY #0
+;    LDA iter
+;    AND #$0F
+;    STA (cram_ptr),Y  ; Set color
+;    INC cram_ptr
+;    BNE skip_cramme
+;    INC cram_ptr+1
+;skip_cramme:
         LDA iter
         AND #$0F          ; Max 16 colors on VDC (and remove all special attributes).
         LDX #$1F          ; VDC data register (we already point to the next attribute byte).
-        JSR vdc_write
+        JSR vdc_reg_write
         JMP nxt_point
 +
 .endif
@@ -2521,7 +3249,8 @@ no_VIC2:
 
 skip_ColorRAM:
 
-; Go to nxt point.
+
+; Go to nxt point in tile.
 nxt_point:
         ; cx = cx + incx
         CLC
@@ -2560,21 +3289,33 @@ nxt_row:
         STA pixelx
         INC pixely
         LDA pixely
-        CMP tileh      ; WARNING: This currently requires tile height < 256.
+        CMP tileh      ; NOTE: This works only with tile height < 256.
         BEQ end_tile
         JMP calc_point
 
 end_tile:
         ; End of tile.
-        ; Check if we need to switch to hi-res mode.
+        ; Check if we need to switch to hi-res mode (lo-res uses a single tile).
         LDA res
-        BEQ switch_to_hires
+        BNE +
+        JMP switch_to_hires
++
     
         ; We have completed a hi-res tile, render it.
-.if BUILD_C64 | BUILD_C128 | BUILD_TED
+.if BUILD_C64 | BUILD_TED
         JSR build_histogram
         JSR scan_histogram
         JSR render_tile_multicolor
+.elif BUILD_C128
+        LDA mode
+        CMP #MODE_VDC
+        BEQ +               ; Special tile rendering in VDC mode.
+        JSR build_histogram
+        JSR scan_histogram
+        JSR render_tile_multicolor
+        JMP go_to_next_tile
++       ; Render VDC tile (2x4).
+        JSR render_tile_VDC
 .elif BUILD_VIC20
         ; No need for histogram (4 fixed colors).
         JSR render_tile_multicolor
@@ -2594,7 +3335,13 @@ go_to_next_tile:
         CMP num_tiles_w
         BNE nxt_tile_in_row
         ; End of tile row, advance to next row.
-.if BUILD_ATARI
+.if BUILD_C128
+        LDA mode
+        CMP #MODE_VDC
+        BNE +
+        JSR bmp_to_next_tile    ; Needed on C128 VDC to update linear bitmap pointer.
++
+.elif BUILD_ATARI
         JSR bmp_to_next_tile    ; Needed on Atari to update linear bitmap pointer.
 .elif BUILD_VIC20
         LDA tiley
@@ -2617,19 +3364,30 @@ go_to_next_tile:
         BCS done_vnt
         DEC bmp_ptr+1
 done_vnt:
-.endif        
+.endif
+        
         INC tiley
         LDA tiley
         CMP num_tiles_h
         BEQ no_more_passes      ; Hi-res pass done. Image completed.
+
         LDA #0
         STA tilex
         LDA ax
         STA t_ax
         LDA ax+1
         STA t_ax+1
+.if BUILD_C128
+        LDA mode
+        CMP #MODE_VDC
+        BNE no_eotH_VDC
+        LDX #2                  ; VDC's HIRES_TILE_H
+        BNE find_next_t_ay
+.endif
+no_eotH_VDC:
         LDX #HIRES_TILE_H       ; Sub HIRES_TILE_H*incy to t_ay.
--       SEC
+find_next_t_ay:
+        SEC
         LDA t_ay
         SBC incy 
         STA t_ay
@@ -2637,12 +3395,22 @@ done_vnt:
         SBC incy+1
         STA t_ay+1
         DEX
-        BNE -
+        BNE find_next_t_ay
         JMP done_tile_advance
+
 nxt_tile_in_row:
         ; Advance to next tile in row.
+.if BUILD_C128
+        LDA mode
+        CMP #MODE_VDC
+        BNE no_eotW_VDC
+        LDX #2                  ; VDC's HIRES_TILE_W
+        BNE find_next_t_ax
+.endif
+no_eotW_VDC:        
         LDX #HIRES_TILE_W         ; Add HIRES_TILE_W*incx to t_ax.
--       CLC
+find_next_t_ax:        
+        CLC
         LDA t_ax
         ADC incx 
         STA t_ax
@@ -2650,7 +3418,7 @@ nxt_tile_in_row:
         ADC incx+1
         STA t_ax+1
         DEX
-        BNE -
+        BNE find_next_t_ax
 done_tile_advance:
     
         JMP nxt_tile
@@ -2663,9 +3431,9 @@ switch_to_hires:
         JMP nxt_pass
 no_more_passes:
         JSR check_userinput ; Check userinput.
-        BNE wait
+        BNE wait_ui
         JMP first_pass      ; Recalculate new image.
-wait:    
+wait_ui:
         JMP no_more_passes  ; Loop checking user input.
     
         RTS ; EXIT
@@ -2691,24 +3459,24 @@ b_END       = h_top4_idx + 4  ; --------------
 var_words   = b_END            ; Start of words.
 ;
 buf_it_ptr  = var_words +  0   ; Pixel iterations buffer.
-ax          = var_words +  2   ; Screen plane upper-left corner x (Q6.10).
-ay          = var_words +  4   ; Screen plane upper-left corner y (Q6.10).
-cx          = var_words +  6   ; Current plane point x (Q6.10).
-cy          = var_words +  8   ; Current plane point x (Q6.10). 
-incx_lr     = var_words + 10   ; Lo-res pixel increment x (Q6.10).
-incy_lr     = var_words + 12   ; Lo-res pixel increment y (Q6.10).
-incx        = var_words + 14   ; Current pixel increment x (Q6.10).
-incy        = var_words + 16   ; Current pixel increment y (Q6.10).
-zx          = var_words + 18   ; zx (Q6.10).
-zy          = var_words + 20   ; zy (Q6.10).
-zx2         = var_words + 22   ; Squared zx (Q6.10).
-zy2         = var_words + 24   ; Squared zy (Q6.10).
+ax          = var_words +  2   ; Screen plane upper-left corner x (Q5.11).
+ay          = var_words +  4   ; Screen plane upper-left corner y (Q5.11).
+cx          = var_words +  6   ; Current plane point x (Q5.11).
+cy          = var_words +  8   ; Current plane point x (Q5.11). 
+incx_lr     = var_words + 10   ; Lo-res pixel increment x (Q5.11).
+incy_lr     = var_words + 12   ; Lo-res pixel increment y (Q5.11).
+incx        = var_words + 14   ; Current pixel increment x (Q5.11).
+incy        = var_words + 16   ; Current pixel increment y (Q5.11).
+zx          = var_words + 18   ; zx (Q5.11).
+zy          = var_words + 20   ; zy (Q5.11).
+zx2         = var_words + 22   ; Squared zx (Q5.11).
+zy2         = var_words + 24   ; Squared zy (Q5.11).
 screenw     = var_words + 26   ; Screen width (pixels).
 screenh     = var_words + 28   ; Screen height (pixels).
 tilew       = var_words + 30   ; Tile width (pixels).
 tileh       = var_words + 32   ; Tile height (pixels).
 tile_num    = var_words + 34   ; Tile number (sequential).
-squares     = var_words + 36   ; Squares table pointers (Q5.9*Q5.9 = Q6.10).
+squares     = var_words + 36   ; Squares table pointers (Q4.10*Q4.10 = Q5.11).
 str_ptr     = var_words + 38   ; Current char of string to print.
 scr_ptr     = var_words + 40   ; Curren screen pointer of string print routine.
 bmp_ptr     = var_words + 42   ; Curren bitmap pointer (hi-res).
@@ -2754,9 +3522,21 @@ check_skippable:
         LDA #>buf_iters_lr
         ADC tile_num+1
         STA buf_it_ptr+1
-        LDY #$00
+        LDY #0
         ; Get reference lo-res iters in this point.
+    ;SEC
+    ;SBC #>buf_iters_lr
+    ;CLC
+    ;ADC #$04
+    ;JSR print_A_hex
+    ;LSR
+    ;LSR
+    ;STA $03
+    ;LDA buf_it_ptr
+    ;ROR
+    ;STA $02
         LDA (buf_it_ptr),Y
+    ;STA ($02),Y
         TAX                ; Save iters.
         ; Dec buf_it_ptr, as indirect-indexed does not allow negative offsets.
         LDA buf_it_ptr
@@ -2780,10 +3560,9 @@ check_skippable:
         SEC
         SBC num_tiles_w
         STA buf_it_ptr
-        LDA buf_it_ptr+1
-        SBC #0
-        STA buf_it_ptr+1
-        TXA                 ; Restore iters.
+        BCS +
+        DEC buf_it_ptr+1
++       TXA                 ; Restore iters.
         ; Check NORTH-EAST
         CMP (buf_it_ptr),Y
         BEQ +
@@ -2804,10 +3583,9 @@ check_skippable:
         CLC
         ADC buf_it_ptr
         STA buf_it_ptr
-        LDA buf_it_ptr+1
-        ADC #0
-        STA buf_it_ptr+1
-        TXA                 ; Restore iters.
+        BCC +
+        INC buf_it_ptr+1
++       TXA                 ; Restore iters.
         ; Check SOUTH-WEST
         CMP (buf_it_ptr),Y
         BEQ +
@@ -2828,15 +3606,57 @@ check_skippable:
 ; Clobbered: A, X
 ;
 bmp_to_next_tile:
-.if BUILD_C64 | BUILD_C128 | BUILD_TED
+.if BUILD_C64 | BUILD_TED
         CLC
         LDA bmp_ptr
         ADC #8
         STA bmp_ptr
         BCC +
         INC bmp_ptr+1
-+        
-        RTS
++       RTS
+
+.elif BUILD_C128
+        LDA mode
+        CMP #MODE_VDC
+        BEQ btnt_vdc
+        
+        ; C128 VIC-IIe
+        CLC
+        LDA bmp_ptr
+        ADC #8
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       RTS
+     
+btnt_vdc:        
+        ; C128 VDC
+        LDX tilex
+        CPX num_tiles_w
+        BEQ b_end_of_row
+        INC bmp_ptr
+        BNE +
+        INC bmp_ptr+1
++       INC vdc_attr_ptr
+        BNE +
+        INC vdc_attr_ptr+1
++       RTS
+b_end_of_row:
+        ; Add 80*3=240 to bmp.
+        LDA bmp_ptr
+        CLC
+        ADC #240
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       ; Add 80 to attr.
+        LDA vdc_attr_ptr
+        CLC
+        ADC #80
+        STA vdc_attr_ptr
+        BCC +
+        INC vdc_attr_ptr+1
++       RTS
 
 .elif BUILD_VIC20
         LDX tilex
@@ -2921,7 +3741,7 @@ b_end_of_row:
 ; Clobbered: A, X, Y
 check_userinput:
         ; Read joy inputs and translate to common format.
-.if BUILD_C64 | BUILD_C128
+.if BUILD_C64 || BUILD_C128
         ; C64/C128 joystick.
         LDA $DC00           ; Get CIA1:PRA. This is [xxxFRLDU].
         AND #$1F            ; Get only joy-2 actions.
@@ -3035,6 +3855,68 @@ shift_pressed:
         
 done_pet_keyboard:
         
+.elif BUILD_B128
+        ; B128 keyboard (6525 TPI).
+        ; Use "WASD" for dirs and "SHIFT" for fire.
+        ;
+        LDA #$1F
+        STA input_scratch   ; Reset input scratch mask to nothing pressed.
+        ;
+        ; Switch to Bank 15
+        LDA #15
+        STA $01
+        ; Select column using PA ($DF00) and PB ($DF01).
+        LDA #0
+        STA $04
+        LDA #$DF
+        STA $05
+        LDA #$FF
+        LDY #0              ; Point to PA (col select).
+        STA ($04),Y         ; PA=$FF
+        ; Check "A" (LEFT).
+        INY                 ; Point to PB (col select).
+        LDA #$FD
+        STA ($04),Y         ; PB=$FD (select kb connector pin 13).
+        INY                 ; Point to PC (row input).
+        LDA ($04),Y         ; Get PC.
+        LSR
+        ORA #$FB
+        AND input_scratch
+        STA input_scratch
+        ; Check "W" (UP) and "S" (DOWN).
+        DEY                 ; Point to PB (col select).
+        LDA #$FB
+        STA ($04),Y         ; PB=$FB (select kb connector pin 12).
+        INY                 ; Point to PC (row input).
+        LDA ($04),Y         ; Get PC.
+        LSR
+        LSR
+        ORA #$FC
+        AND input_scratch
+        STA input_scratch
+        ; Check "D" (RIGHT).
+        DEY                 ; Point to PB (col select).
+        LDA #$F7
+        STA ($04),Y         ; PB=$F7 (select kb connector pin 11).
+        INY                 ; Point to PC (row input).
+        LDA ($04),Y         ; Get PC.
+        ORA #$F7
+        AND input_scratch
+        STA input_scratch
+        ; Check "SHIFT" (FIRE).
+        DEY                 ; Point to PB (col select).
+        LDA #$FE
+        STA ($04),Y         ; PB=$FE (select kb connector pin 14).
+        INY                 ; Point to PC (row input).
+        LDA ($04),Y         ; Get PC.
+        ORA #$EF
+        AND input_scratch
+        STA input_scratch   ; [000FRLDU] 
+
+        ; Switch back to Bank 1
+        LDX #1
+        STX $01
+
 .elif BUILD_ATARI
         ; Atari joystick input.
         LDA $D300           ; PIA:PORTA[3..0] is joy-1 directions [R,L,D,U]. Active low.
@@ -3188,6 +4070,21 @@ yes_input:
         LDA $9115         ; Get Timer #1
 .elif BUILD_PET
         LDA $E845         ; Get Timer #1
+.elif BUILD_B128
+        LDA #$08          ; Get CIA2 TOD 10th of second ($DC08).
+        STA $04
+        LDA #$DC
+        STA $05
+        LDY #15
+        STY $01
+        LDY #0
+        LDA ($04),Y
+        ASL               ; Move 10th of second to upper nibble.
+        ASL
+        ASL
+        ASL
+        LDY #1
+        STY $01
 .elif BUILD_ATARI
         LDA frame_couter  ; Get 
 .elif BUILD_BEEB
@@ -3201,6 +4098,7 @@ yes_input:
 
 process_input:
         ; We have some input.
+        TAY				  ; Save masked time.
         ;INC COL_BORDER    ; Debug only.
         
         ; If any directions are pressed, then we have some action.
@@ -3214,7 +4112,7 @@ process_input:
 
 directions_pressed:
         STY prev_timer    ; Remember last-input masked time.
-        TXA               ; Retreive joy input from X.
+        TXA               ; Retrieve joy input from X.
         AND #$10
         BEQ fire          ; If bit 4 is 0, then fire is pressed.
         JMP no_fire
@@ -3231,91 +4129,116 @@ chk_zoom_IN:
     INCX_ZOOM_STEP = 4
     INCY_ZOOM_STEP = 4
 .endif        
-        TXA               ; Retreive joy input from X.
-        AND #$01          ; Up
+        TXA                 ; Retreive joy input from X.
+        AND #$01            ; Up
         BNE chk_zoom_OUT
-        LDA incx_lr
-        SEC
+        
+        ; ZOOM IN.
+        ; X
         LDA incx_lr+1
         STA incx_lr_prev+1
         LDA incx_lr
         STA incx_lr_prev
+        SEC
         SBC #INCX_ZOOM_STEP
+        STA incx_lr
         BCS +
-        SEC
-        LDA #1            ; Max zoom-in reached.
-+       STA incx_lr
+        ; Borrow.
         LDA incx_lr+1
-        SBC #0
-        STA incx_lr+1       
-        SEC
+        BEQ set_min_step    ; Negative step.
+        DEC incx_lr+1
++       BNE +
+        ; incx_lr+1 == 0. Enforce min zoom-in step.
+        LDA incx_lr
+        CMP #INCX_ZOOM_STEP
+        BCC set_min_step    ; BLT
++
+        ; Y
         LDA incy_lr+1
         STA incy_lr_prev+1
         LDA incy_lr
         STA incy_lr_prev
-        SBC #INCY_ZOOM_STEP
-        BCS +
         SEC
-        LDA #1            ; Max zoom-in reached.
-+       STA incy_lr
+        SBC #INCY_ZOOM_STEP
+        STA incy_lr
+        BCS +
+        ; Borrow.
         LDA incy_lr+1
-        SBC #0
+        BEQ set_min_step    ; Negative step.
+        DEC incy_lr+1
++       BNE +
+        ; incy_lr+1 == 0. Enforce min zoom-in step.
+        LDA incy_lr
+        CMP #INCY_ZOOM_STEP
+        BCC set_min_step    ; BLT
++
+        JMP zoomin_recenter
+
+set_min_step:
+        LDA #0
+        STA incx_lr+1
         STA incy_lr+1
-        JSR recenter      ; This clobbers X.  
+        LDA #INCX_ZOOM_STEP
+        STA incx_lr
+        LDA #INCY_ZOOM_STEP
+        STA incy_lr
+
+zoomin_recenter:       
+        JSR recenter        ; This clobbers X.  
         LDA incx_lr
         JSR print_A_hex
         JMP end_input
 
 chk_zoom_OUT:    
-        TXA               ; Retrieve input.
-        AND #$02          ; Down
+        TXA                 ; Retrieve input.
+        AND #$02            ; Down
         BNE chk_iters_more
+        
+        ; ZOOM OUT
         LDA incx_lr+1
         STA incx_lr_prev+1
         LDA incx_lr
-        CMP #241          ; Max zoom-out reached.
-        BCC +
-        JMP end_input
-+       STA incx_lr_prev
-        CLC
+        STA incx_lr_prev
+        CMP #241            ; Max zoom-out reached ?
+        BCC +               ; No, increase step.
+        JMP end_input       ; Yes. Do nothing.
+        
++       CLC
         ADC #INCX_ZOOM_STEP
         STA incx_lr
-        LDA incx_lr+1
-        ADC #0
-        STA incx_lr+1       
-        LDA incy_lr+1
-        STA incy_lr_prev+1
+        BCC +
+        INC incx_lr+1
         CLC
++       LDA incy_lr+1
+        STA incy_lr_prev+1
         LDA incy_lr
         STA incy_lr_prev
         ADC #INCY_ZOOM_STEP
         STA incy_lr
-        LDA incy_lr+1
-        ADC #0
-        STA incy_lr+1
-        LDA incx_lr
-        JSR print_A_hex
-        JSR recenter      ; This clobbers X.  
+        BCC +
+        INC incy_lr+1
++       JSR print_A_hex
+        JSR recenter        ; This clobbers X.  
         JMP end_input
-+    
+    
 chk_iters_more:
-        TXA               ; Retrieve input.
-        AND #$08          ; Right
+        TXA                 ; Retrieve input.
+        AND #$08            ; Right
         BNE chk_iters_less
         LDA max_iter
-        CMP #255          ; Max 255 iters.
+        CMP #255            ; Max 255 iters.
         BEQ end_zoomiters
         INC max_iter
         LDA max_iter
         JSR print_A_hex
 
 chk_iters_less:
-        TXA               ; Retrieve input.
-        AND #$04          ; Left
+        TXA                 ; Retrieve input.
+        AND #$04            ; Left
         BNE end_zoomiters
         DEC max_iter
         BNE +
-        LDA #2            ; Min iters is 2.
+        LDA #2              ; Min iters is 2.
         STA max_iter
 +       LDA max_iter
         JSR print_A_hex
@@ -3324,7 +4247,7 @@ end_zoomiters:
         ; Set zero flag if image must be recalculated.
         TXA
         AND #$0F           
-        CMP #$0F          ; Check if a joystick direction was pressed.    
+        CMP #$0F            ; Check if a joystick direction was pressed.    
         BEQ no_dir
         LDA #$00
         RTS
@@ -3335,8 +4258,8 @@ no_dir:
 no_fire: ;----- no fire button pressed
         ; Handle pan.
 chk_pan_U:
-        TXA               ; Retrieve input from X.
-        AND #$01          ; Up
+        TXA                 ; Retrieve input from X.
+        AND #$01            ; Up
         BNE chk_pan_D
         CLC
         LDA ay
@@ -3346,8 +4269,8 @@ chk_pan_U:
         ADC incy+1
         STA ay+1      
 chk_pan_D:
-        TXA               ; Retrieve input.
-        AND #$02          ; Down
+        TXA                 ; Retrieve input.
+        AND #$02            ; Down
         BNE chk_pan_L
         SEC
         LDA ay
@@ -3357,8 +4280,8 @@ chk_pan_D:
         SBC incy+1
         STA ay+1
 chk_pan_L:
-        TXA               ; Retrieve input.
-        AND #$04          ; Left
+        TXA                 ; Retrieve input.
+        AND #$04            ; Left
         BNE chk_pan_R
         SEC
         LDA ax
@@ -3368,8 +4291,8 @@ chk_pan_L:
         SBC incx+1
         STA ax+1
 chk_pan_R:
-        TXA               ; Retrieve input.
-        AND #$08          ; Right
+        TXA                 ; Retrieve input.
+        AND #$08            ; Right
         BNE end_input
         CLC
         LDA ax
@@ -3535,22 +4458,53 @@ pA_alpha_1:
         SEC
         SBC #9
         STA nibble_char_l
-        
+
+.if BUILD_B128
+        TYA
+        PHA         ; Save Y.
+        LDA $01
+        PHA         ; Remember bank.
+        LDA $04
+        PHA         ; Remember $04
+        LDA $05
+        PHA         ; Remember $05
+        ; Switch to bank 15
+        LDA #15
+        STA $01
+        LDA #$00
+        STA $04
+        LDA #$D0
+        STA $05
+        LDA nibble_char_h
+        LDY #0
+        STA ($04),Y
+        LDA nibble_char_l
+        INY
+        STA ($04),Y
+        PLA         ; Retrieve $05.
+        STA $05
+        PLA         ; Retrieve $04.
+        STA $04
+        PLA         ; Retrieve previous bank.
+        STA $01
+        PLA         ; Restore Y.
+        TAY
+.else        
         ;LDA mode
-        ;AND #MODE_VIC2 | MODE_KAWARI
+        ;AND #MODE_VIC | MODE_KAWARI
         ;BEQ +
         ; Output.
         LDA nibble_char_h
         STA SCR_RAM
         LDA nibble_char_l
         STA SCR_RAM+1
-.if COL_RAM
+    .if COL_RAM
         ; Set color.
         LDA #$61   ; Light gray (use also high nibble for TED machines).
         STA COL_RAM
         STA COL_RAM+1
+    .endif
 .endif
-        JMP end_pAh
 ;+ 
         ;CMP #MODE_VDC
         ;BNE +
@@ -3559,24 +4513,24 @@ pA_alpha_1:
         ;PHA
         ;LDX #$12          ; VDC mem addr HI
         ;LDA #$00
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;INX               ; VDC mem addr LO
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;LDX #$1F          ; VDC data
         ;LDA nibble_char_h
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;LDA nibble_char_l
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;; Set color.
         ;LDX #$12          ; VDC mem addr HI
         ;LDA #$10
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;INX               ; VDC mem addr LO
         ;LDA #$00
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;LDX #$1F          ; VDC data
         ;LDA #$1F          ; White.
-        ;JSR vdc_write
+        ;JSR vdc_reg_write
         ;PLA
         ;TAX
         ;JMP end_pAh
@@ -3589,13 +4543,14 @@ nibble_char_h: .byte 0
 nibble_char_l: .byte 0
 
 
+
 ;=============================================================
-; Description: Signed Q5.9 fixed-point squares table.
-; This is a 32KB table containing 16384 Q5.9 numbers (two bytes each).
-; Only positive Q5.9 with even lowest bit are present.
+; Description: Signed Q4.10 fixed-point squares table.
+; This is a 32KB table containing 16384 Q4.10 numbers (two bytes each).
+; Only positive Q4.10 with even lowest bit are present.
 ; Table starts at $5000 and ends at $cfff
 
-init_squares_q5_9:
+init_squares_q4_10:
         LDA #$00
         STA squares     ; Use a page 0 address.
         LDA #$50
@@ -3606,7 +4561,7 @@ init_squares_q5_9:
         STY y0
         STY y1
 
--       JSR multiply_Q6_10_signed
+-       JSR multiply_Q5_11_signed
         ; Result is in [z1..z2].
         LDA z1
         LDY #$00
@@ -3632,14 +4587,14 @@ squares_tab_complete:
         RTS
 
 ;===========================================================
-; Description: Get the square of the given signed Q10.6 number using the signed Q5.9 squares table.
+; Description: Get the square of the given signed Q5.11 number using the signed Q4.10 squares table.
 ; NOTE: The square will be an approximation if the last bit is odd.
 ;
-; Input: Q6.10 signed value in x0,x1
+; Input: Q5.11 signed value in x0,x1
 ;
-; Output: Approximated Q6.10 signed squared value in z1,z2
+; Output: Approximated Q5.11 signed squared value in z1,z2
 
-square_Q10_6:
+square_Q5_11:
         ; Check if negative.
         LDA x1
         BPL not_neg
@@ -3675,26 +4630,27 @@ fetch_square:
         RTS
 
 ;==============================================================
-; Description: Signed Q6.10 fixed-point multiplication with signed Q6.10 result.
+; Description: Signed Q5.11 fixed-point multiplication with signed Q5.11 result.
 ; This uses the multiply_16bit_unsigned routine.
 ;
 ; Revision history [authors in square brackets]:
 ; 2024-11-07: First simple test loop. [DDT]
+; 2025-02-13: Changed to Q5.11 [DDT]
 ;
-; Input: Q6.10 signed value in x0,x1
-;        Q6.10 signed value in y0,y1
+; Input: Q5.11 signed value in x0,x1
+;        Q5.11 signed value in y0,y1
 ;
-; Output: Q6.10 signed value z1,z2
+; Output: Q5.11 signed value z1,z2
 ;
 ; Clobbered: X, A, C
-multiply_Q6_10_signed:
+multiply_Q5_11_signed:
             
         ; Step 1: signed multiply
         JSR multiply_16bit_signed
         ; Result is in z1,z2.
         
         ; Perform fixed point adjustment.
-        ; We need to shift it right 10 bits, so just ignore z0 and shift right twice the 24 bit value in z1,z2,z3.
+        ; We need to shift it right 11 bits, so just ignore z0 and shift right thrice the 24 bit value in z1,z2,z3.
         LDA z3
         CMP #$80        ; Set carry if result is negative.
         ROR z3
@@ -3705,27 +4661,43 @@ multiply_Q6_10_signed:
         ROR z3
         ROR z2
         ROR z1
+
+        CMP #$80        ; Set carry if result is negative.
+        ROR z3
+        ROR z2
+        ROR z1
         
         RTS
 
-buf_iters_hr:              .fill 4*8    ; We buffer hi-res tiles up to 4x8.
-buf_tile_size:             .byte 0      ; 0 means screen size or none (depending on mode).
-; Tile iterations buffer (max 40*32).
-; This is only used in hi-res. In lo-res we write colors directly to Color RAM.
+buf_tile_size:  .byte 0      ; 0 means screen size or none (depending on mode).
+
+enable_buf_it:  .byte 1
+
+; Tile iterations buffers (lo-res and hi-res).
 .if BUILD_C64
 buf_iters_lr = $E000
+buf_iters_hr = $E800
 .elif BUILD_C128
 buf_iters_lr = $E000
+buf_iters_hr = $F000
 .elif BUILD_TED
 buf_iters_lr = $E000
+buf_iters_hr = $E800
 .elif BUILD_VIC20
 buf_iters_lr = $2000
+buf_iters_hr = $2800
 .elif BUILD_PET
 buf_iters_lr = $1C00            ; Is that ok ?
+buf_iters_hr = $1C00            ; Is that ok ?
+.elif BUILD_B128
+buf_iters_lr = $E000
+buf_iters_hr = $F000
 .elif BUILD_ATARI
 buf_iters_lr = $E000
+buf_iters_hr = $E800
 .elif BUILD_BEEB
 buf_iters_lr = $1000
+buf_iters_hr = $1800
 .endif
 
 
@@ -3762,43 +4734,52 @@ z3  = $09            ;
 
 
 
-; IMPORTANT: Align each table to start of a page.
+;========================== MULTIPLICATION TABLES ==========================
+; Must be aligned to page boundary.
+;
 .if BUILD_C64
-mul_tab_offset = $4700
+    MULT_TAB_ADDR = $4700
 .elif BUILD_C128
-mul_tab_offset = $4700
+    MULT_TAB_ADDR = $4700
 .elif BUILD_TED
-mul_tab_offset = $4700
+    MULT_TAB_ADDR = $4700
 .elif BUILD_VIC20
-mul_tab_offset = $3700
+    MULT_TAB_ADDR = $3700
 .elif BUILD_PET
-mul_tab_offset = $800
+    MULT_TAB_ADDR = $800
+.elif BUILD_B128
+    MULT_TAB_ADDR = $2800
 .elif BUILD_ATARI
-mul_tab_offset = $4700
+    MULT_TAB_ADDR = $4700
 .elif BUILD_BEEB
-mul_tab_offset = $2700
+    MULT_TAB_ADDR = $2700
+.endif
+
+; First, check that code assembled didn't go past MULT_TAB_ADDR.
+.if (Mandelbrot < MULT_TAB_ADDR) && (* > MULT_TAB_ADDR)
+    .error "Assembled code overrun over mult tab."
 .endif
 
 ; Note - the last byte of each table is never referenced, as a+b<=510
-        * = mul_tab_offset
+        * = mult_tab_addr
 sqrlo:
     .for i := 0, i < 511, i += 1
         .byte <((i*i)/4)
     .endfor
 
-        * = mul_tab_offset + $200
+        * = mult_tab_addr + $200
 sqrhi:
     .for i := 0, i < 511, i += 1
         .byte >((i*i)/4)
     .endfor
 
-        * = mul_tab_offset + $400
+        * = mult_tab_addr + $400
 negsqrlo:
     .for i := 0, i < 511, i += 1
         .byte <(((255-i)*(255-i))/4)
     .endfor
 
-        * = mul_tab_offset + $600
+        * = mult_tab_addr + $600
 negsqrhi:
     .for i := 0, i < 511, i += 1
         .byte >(((255-i)*(255-i))/4)
@@ -3978,3 +4959,4 @@ mulu_init:
     rts
     
 END_ADDRESS:
+    
