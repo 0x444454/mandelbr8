@@ -96,7 +96,7 @@ Here is the maximum magnitude reached for each point during the calculation:
 
 ![screenshots](media/max_values.jpg)
 
-And this determines the choice of Q5.11.
+And this determines the choice of Q5.11 as a good compromise between density and overflow errors during calculation.
 
 ### Rendering
 
