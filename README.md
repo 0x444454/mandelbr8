@@ -90,7 +90,7 @@ Currently, a stock Commodore 64 is be able to render the full set preview (first
 There are two different fixed-point notations using "Q" numbers. TI and ARM. I am using ARM notation. More info here:  
 https://en.wikipedia.org/wiki/Q_(number_format)  
 
-The current implementation uses Q5.11, so integers up to |16| can be represented.  
+The current implementation uses Q5.11, so integers in the range [-15 .. +15] can be represented.  
 The Mandelbrot set is contained in a circle with radius 2. However, during calculation, numbers greater than 2 are encountered, depending on the point being calculated.  
 Here is the maximum magnitude reached for each point during the calculation:  
 
