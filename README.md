@@ -11,7 +11,7 @@ Currently supported CPU types:
 - Commodore CBM-II machines (6xx and 7xx, including the "B128").
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
-- [more 8 bit machines in the future]
+- [more soon]
 
 ### Z80
 [soon]
