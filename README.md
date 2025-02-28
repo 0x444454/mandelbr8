@@ -2,7 +2,7 @@
 A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
 
 Currently supported:
-## 6502
+### 6502
 - Commodore 64 (with or without Kawari acceleration).
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
@@ -13,10 +13,10 @@ Currently supported:
 - BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
 
-## Z80
+### Z80
 [soon]
 
-## 6809/6309
+### 6809/6309
 [soon]
 
 ![screenshots](media/mandel8-20250228.jpg)
