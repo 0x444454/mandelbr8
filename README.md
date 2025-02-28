@@ -1,7 +1,7 @@
 # mandelbr8
 A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
 
-Currently supported:
+Currently supported CPU types:
 ### 6502
 - Commodore 64 (with or without Kawari acceleration).
 - Commodore 128 (VIC-IIe and VDC modes).
