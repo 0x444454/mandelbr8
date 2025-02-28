@@ -11,6 +11,7 @@ BUILD_C128  = 0 ; Commodore 128.
 BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
 BUILD_PET   = 0 ; Commodore PET (8 KB required).
+BUILD_B128  = 0 ; Commodore B128 (CBM 610).
 BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
 BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
 ```
