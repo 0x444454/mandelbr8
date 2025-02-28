@@ -6,6 +6,7 @@ Currently supported:
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
 - Commodore VIC-20 (16+ KB).
 - Commodore PET (8+ KB, with optional color support).
+- Commodore CBM-II machines (6xx and 7xx, including the "B128").
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
@@ -17,7 +18,7 @@ Currently supported:
 The app is simply controlled using a joystick:
 - C64/C128: Joystick port 2.
 - TED machines: Joystick port 1.
-- PET machines: WASD for directions and SHIFT for fire button.
+- PET and CBM-II machines: WASD for directions and SHIFT for fire button.
 - Atari XL/XE: Joystick port 1.
 - BBC Micro: Analog joystick port 1 (untested), or cursor keys + shift.
 
@@ -40,7 +41,7 @@ Note: Kawari 320x200 high resolution is not yet supported (work in progress).
 
 ### C128 80 column mode:
 - First pass: 80x50, 16 colors
-- Second pass: [not yet supported].
+- Second pass: 160x100, 16 colors (64 KB VDC RAM required)
 
 Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
 
@@ -50,7 +51,11 @@ Note: The 80x50 text mode is experimental and has not been tested on a CRT displ
 
 ### PET
 - First pass: 40x25 mono, or 40x25 16 color, or 80x25 mono
-- Second pass: [not supported].
+- Second pass: [not supported]
+
+### CBM2
+- First pass: 80x25 mono
+- Second pass: [not supported]
 
 ### ATARI XL/XE:
 - First pass: 40x25, 16 shades of gray
@@ -72,9 +77,9 @@ This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikip
 Most 8-bit CPUs don't have integer multiplication instructions, let alone floating point ones, which makes classic implementations very slow and frustrating.  
 This algorithm makes the calculation much faster, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
-My algorithm solves this by using Q6.10 fixed-point integers instead of floats. A Q6.10 number uses 6 bits for the signed integer part (5+sign), and 10 bits for the decimal part.  
-This allows using fast 16x16 signed integer multiplication algorithms, and then adjust the result back to Q6.10.  
-Before starting, if the machine has at least 64 KB, the program creates a 32 KB table of 16384 Q5.9 unsigned numbers. This speeds up the calculation even more, as no multiplication is needed to square a number, bringing the total number of multiplications to 1 per iteration.  
+My algorithm solves this using Q5.11 fixed-point integers instead of floats. A Q5.11 number uses 5 bits for the signed integer part (4+sign), and 11 bits for the decimal part.  
+This allows using fast 16x16 signed integer multiplication algorithms, and then adjust the result back to Q5.11.
+Before starting, if the machine has at least 64 KB, the program creates a 32 KB table of 16384 Q4.10 unsigned numbers. This speeds up the calculation even more, as no multiplication is needed to square a number, bringing the total number of multiplications to 1 per iteration.  
 Also, if hardware acceleration is available in the system, the program takes advantage of it. For example, if a Kawari chip is present, the calculation time decreases about 25%.  
 
 Note that the code can be optimized further, and will be in future releases.  
@@ -85,10 +90,12 @@ Currently, a stock Commodore 64 is be able to render the full set preview (first
 There are two different fixed-point notations using "Q" numbers. TI and ARM. I am using ARM notation. More info here:  
 https://en.wikipedia.org/wiki/Q_(number_format)  
 
-My current routines are generic and use Q6.10.  
-It is important to note that allocating 6 bits (5+sign) for the integer part is **overkill for Mandelbrot calculations**.  
-I will change the fixed format allocating more bits to the fractional part in the future. This will allow more zoom-in range.  
-This is not a priority now, as I am having fun with porting this to different platforms ;-)
+The current implementation uses Q5.11, so integers up to |16| can be represented.  
+The Mandelbrot set is contained in a circle with radius 2. However, during calculation, numbers greater than 2 are encountered, depending on the point being calculated.  
+Here is the maximum magnitude reached by the calculation:  
+[picture here]
+
+And this determines the choice of Q5.11.
 
 ### Rendering
 
