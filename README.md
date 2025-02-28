@@ -53,7 +53,7 @@ Note: The 80x50 text mode is experimental and has not been tested on a CRT displ
 - First pass: 40x25 mono, or 40x25 16 color, or 80x25 mono
 - Second pass: [not supported]
 
-### CBM2
+### CBM-II
 - First pass: 80x25 mono
 - Second pass: [not supported]
 
@@ -92,8 +92,9 @@ https://en.wikipedia.org/wiki/Q_(number_format)
 
 The current implementation uses Q5.11, so integers up to |16| can be represented.  
 The Mandelbrot set is contained in a circle with radius 2. However, during calculation, numbers greater than 2 are encountered, depending on the point being calculated.  
-Here is the maximum magnitude reached by the calculation:  
-[picture here]
+Here is the maximum magnitude reached for each point during the calculation:  
+
+![screenshots](media/max_values.jpg)
 
 And this determines the choice of Q5.11.
 
