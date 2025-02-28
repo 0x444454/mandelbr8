@@ -11,7 +11,7 @@ Currently supported:
 - BBC Micro B (32 KB).
 - [more 8 bit machines in the future]
 
-![screenshots](media/mandel8-20241218.jpg)
+![screenshots](media/mandel8-20250228.jpg)
 
 # CONTROLS
 
