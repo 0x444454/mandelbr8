@@ -92,7 +92,7 @@ Before starting, if the machine has at least 64 KB, the program creates a 32 KB 
 Also, if hardware acceleration is available in the system, the program takes advantage of it. For example, if a Kawari chip is present, the calculation time decreases about 25%.  
 
 Note that the code can be optimized further, and will be in future releases.  
-Currently, a stock Commodore 64 is be able to render the full set preview (first-pass) in about 2 seconds, and the full hi-res image in less than 1.5 minutes.
+Currently, a stock Commodore 64 is be able to render the full set preview (first-pass) in about 3 seconds, and the full hi-res image in less than 1.5 minutes.
 
 ### Note about fixed-point precision
 
