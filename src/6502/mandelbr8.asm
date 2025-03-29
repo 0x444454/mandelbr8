@@ -28,6 +28,7 @@
 ;   2025-02-15: Added support for C128 VDC 160x100 (64KB VDC VRAM required). [DDT]
 ;   2025-02-24: Studying CBM2 machines and 6509 CPU to support B128. [DDT]
 ;   2025-02-25: Support for B128. [DDT]
+;   2025-03-29: Improved hi-res support for C128 with 64KB VDC (640x200). [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
@@ -428,7 +429,7 @@ done_expansion:
 .endif ; BUILD_ATARI
 
 
-        ; Initialize unsigned mul tables. This is required also by "print_str", so do it now.
+        ; Initialize unsigned mul tables. This is required also by "`", so do it now.
         JSR mulu_init 
 
 
@@ -791,7 +792,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2025-02-25", $0D
+        .text "version 2025-03-29", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -1728,35 +1729,35 @@ build_histogram:
         RTS
 
 ;------------- Scan histogram -------------
-; Find the 4 most used colors (mod16), and store them sorted in h_top4 (higher to lower).
+; Find the 4 most used colors (mod16), and store them sorted in h_top_idx (higher to lower).
 ; NOTE: Black (color 0) is not counted, as it is the fixed background color (and always available).
 ; NOTE: This is probably overkill, as we only need 3 colors + black (fixed background).
 scan_histogram:
         ; Clear results.
         LDA #$00
         ; Clear top counts.
-        STA h_top4_cnt
-        STA h_top4_cnt+1
-        STA h_top4_cnt+2
-        STA h_top4_cnt+3
+        STA h_top_cnt
+        STA h_top_cnt+1
+        STA h_top_cnt+2
+        STA h_top_cnt+3
         ; Y is the result index (0 to 4).
         LDY #0
 find_next:
         ; Scan all 16 entries.
         LDA #0
-        STA h_top4_cnt,Y       ; Highest count found.
-        STA h_top4_idx,Y       ; Index of highest found.
-        LDX #15                ; Start with color 15 (down to 1).
--       LDA b_hist,X           ; Fetch color count.
-        CMP h_top4_cnt,Y       ; Is this color more used than current most used ?
-        BCC +                  ; BLT.
+        STA h_top_cnt,Y         ; Highest count found.
+        STA h_top_idx,Y         ; Index of highest found.
+        LDX #15                 ; Start with color 15 (down to 1).
+-       LDA b_hist,X            ; Fetch color count.
+        CMP h_top_cnt,Y         ; Is this color more used than current most used ?
+        BCC +                   ; BLT.
         ; Higher or equal found.
-        STA h_top4_cnt,Y       ; Update highest count.
-        STX h_top4_idx,Y       ; Update index of highest count.
+        STA h_top_cnt,Y         ; Update highest count.
+        STX h_top_idx,Y         ; Update index of highest count.
 +       DEX
-        BNE -                  ; Stop at color 1, avoiding 0 (black) as the background color is always available.
+        BNE -                   ; Stop at color 1, avoiding 0 (black) as the background color is always available.
         ; Found the index. Zero its histogram count, so we won't parse it again.
-        LDA h_top4_idx,Y
+        LDA h_top_idx,Y
         TAX
         LDA #$00
         STA b_hist,X 
@@ -1794,7 +1795,7 @@ render_tile_multicolor:
         CLC
         ADC #$D8
         STA cram_ptr+1
-        LDA h_top4_idx+2
+        LDA h_top_idx+2
         LDY #0
         STA (cram_ptr),Y
         ; Screen RAM (%10 and %01).
@@ -1802,10 +1803,10 @@ render_tile_multicolor:
         CLC
         ADC #$04
         STA cram_ptr+1
-        LDA h_top4_idx+1
+        LDA h_top_idx+1
         AND #$0F
         STA tmp_A
-        LDA h_top4_idx+0
+        LDA h_top_idx+0
         ASL
         ASL
         ASL
@@ -1820,14 +1821,14 @@ render_tile_multicolor:
         CLC
         ADC #>SCR_RAM       ; Video matrix.
         STA cram_ptr+1
-        LDA h_top4_idx      ; Multicolor pattern %01 uses color from video matrix bits [7..4].
+        LDA h_top_idx      ; Multicolor pattern %01 uses color from video matrix bits [7..4].
         ASL
         ASL
         ASL
         ASL
         LDY #0
         STA (cram_ptr),Y
-        LDA h_top4_idx+1    ; Multicolor pattern %10 uses color from video matrix bits [3..0].
+        LDA h_top_idx+1    ; Multicolor pattern %10 uses color from video matrix bits [3..0].
         AND #$0F
         ORA (cram_ptr),Y
         STA (cram_ptr),Y
@@ -1860,15 +1861,15 @@ nxt_tile_pix_MC:
         ; If black, pass-through as background color.
         BEQ found_conversion
         ; Search for exact match in histogram.
-        CMP h_top4_idx   ; Compare with 1st most used.
+        CMP h_top_idx    ; Compare with 1st most used.
         BNE +
         LDA #%01
         JMP found_conversion
-+       CMP h_top4_idx+1 ; Compare with 2st most used.
++       CMP h_top_idx+1  ; Compare with 2st most used.
         BNE +
         LDA #%10
         JMP found_conversion
-+       CMP h_top4_idx+2 ; Compare with 3rd most used.
++       CMP h_top_idx+2  ; Compare with 3rd most used.
         BNE +
         LDA #%11
         JMP found_conversion
@@ -2455,7 +2456,7 @@ vdc_set_hires:
         ; Wait for VBlank to minimize glitch.
         JSR vdc_wait_vb
 
-        ; Setup 160x100 bitmap mode (each attribute is 8x2, used only for fg/bg attributes).
+        ; Setup 640x200 bitmap mode (each attribute is 8x2 pixels, used only for fg/bg attributes).
         ; NOTE: This has not been tested on a CRT (only in VICE).
         
         LDX #$09            ; VDC[CTV]: Rasterlines - 1 per char row. (Default 7).
@@ -2572,6 +2573,20 @@ vdc_lo_res:
         LDA #50
         STA screenh
         STA tileh
+        ; Pad incx_lr to multiples of 8.
+        LDA incx_lr
+        AND #$F8
+        CMP #0
+        BNE +
+        LDA #$08
++       STA incx_lr
+        ; Pad incy_lr to multiples of 8.
+        LDA incy_lr
+        AND #$F8
+        CMP #0
+        BNE +
+        LDA #$08
++       STA incy_lr
         ; Point to start of VDC attributes.
         LDX #$12          ; VDC mem addr HI
         LDA #$10
@@ -2582,23 +2597,33 @@ vdc_lo_res:
         RTS
 
 vdc_hi_res:
-        ; VDC hi-res (one single 160x100 tile).
+        ; VDC hi-res (80x50 tiles).
         LDA #80
         STA num_tiles_w
         LDA #50
         STA num_tiles_h
-        LDA #160
+        LDA #<640
         STA screenw
-        LDA #100
+        LDA #>640
+        STA screenw+1
+        LDA #200
         STA screenh
-        LDA #2
+        LDA #8
         STA tilew
-        LDA #2
+        LDA #4
         STA tileh
-        LDA #2*2 ; Pixels per tile.
+        LDA #8*4 ; Pixels per tile.
         STA buf_tile_size
+        ; Div incx by 8.
         LSR incx+1
         ROR incx
+        LSR incx+1
+        ROR incx
+        LSR incx+1
+        ROR incx
+        ; Div incx by 4.
+        LSR incy+1
+        ROR incy
         LSR incy+1
         ROR incy
         ; Point bitmap to start of VDC mem ($0000).
@@ -2614,63 +2639,64 @@ vdc_hi_res:
         RTS
         
 
-;------------- Render a Mandelbrot tile (2x2) with the VDC -------------
-; After this, bmp_ptr needs to point to the next tile.
+;------------- Render a VDC hires tile (8x4) -------------
+; We can choose background and foreground for the 8x2 upper half and the 8x2 lower half of the tile.
+; We therefore compute an histogram for each half, and then select the best colors to use.
+; IMPORTANT: After this, bmp_ptr needs to point to the next tile.
 ;        
 render_tile_VDC:
-        LDX bmp_ptr
-        LDY bmp_ptr+1
-        LDA #4
-        STA vdc_row_count
-        ; Set all 4 bytes of the tile to #$0F (background, foreground).
-vdc_set_tile_bmp:
-        LDA #$0F            ; Value (always $0F): 4 pixels off, 4 pixels on.
-        JSR vdc_mem_write
-        TXA
+        ; Set temp pointer for attr.
+        LDA vdc_attr_ptr+0
+        STA vdc_tmp_ptr_a+0
+        LDA vdc_attr_ptr+1
+        STA vdc_tmp_ptr_a+1
+        ; Set temp pointer for bitmap.
+        LDA bmp_ptr+0
+        STA vdc_tmp_ptr_b+0
+        LDA bmp_ptr+1
+        STA vdc_tmp_ptr_b+1
+
+        ; Point to iterations buffer for this tile (8x4).
+        ; This will be rendered as two half-tiles (8x2) and (8x2).
+        LDA #<buf_iters_hr
+        STA buf_it_ptr
+        LDA #>buf_iters_hr
+        STA buf_it_ptr+1
+
+        ; UPPER HALF of tile
+
+        ; Compute histogram for upper half (8x2 pixels): tile rows 0 and 1.
+        JSR vdc_compute_histogram
+        ; Scan histogram. This will store the top 2 colors sorted in h_top_idx (higher to lower).
+        JSR vdc_scan_histogram
+        ; Set attributes for this half-tile.
+        JSR vdc_set_most_used_colors
+        ; Best match colors of tile pixel row 0 (8 pixels), set bitmap and advance tmp ptrs.
+        JSR vdc_best_match_bitmap_and_adv
+        ; Best match colors of tile pixel row 1 (8 pixels), set bitmap and advance tmp ptrs.
+        JSR vdc_best_match_bitmap_and_adv
+
+        ; Advance attr to next tile half.
+        LDA vdc_tmp_ptr_a+0
         CLC
         ADC #80
-        TAX
+        STA vdc_tmp_ptr_a+0
         BCC +
-        INY
-+       DEC vdc_row_count
-        BNE vdc_set_tile_bmp
-        
-        ; Now set attributes.
-        LDX vdc_attr_ptr
-        LDY vdc_attr_ptr+1
+        INC vdc_tmp_ptr_a+1
++ 
+        ; LOWER HALF of tile
+        ; Compute histogram for lower half (8x2 pixels): tile rows 2 and 3.
+        JSR vdc_compute_histogram
+        ; Scan histogram. This will store the top 2 colors sorted in h_top_idx (higher to lower).
+        JSR vdc_scan_histogram
+        ; Set attributes for this half-tile.
+        JSR vdc_set_most_used_colors
+        ; Best match colors of tile pixel row 2 (8 pixels), set bitmap and advance tmp ptrs.
+        JSR vdc_best_match_bitmap_and_adv
+        ; Best match colors of tile pixel row 3 (8 pixels), set bitmap and advance tmp ptrs.
+        JSR vdc_best_match_bitmap_and_adv
 
-        LDA buf_iters_hr+0
-        ASL
-        ASL
-        ASL
-        ASL
-        STA vdc_tmp
-        LDA buf_iters_hr+1
-        AND #$0F
-        ORA vdc_tmp         ; Attribute value to write (two colors, one per nibble).
-    ;LDA #$3F
-        JSR vdc_mem_write
-
-        TXA
-        CLC
-        ADC #80
-        TAX
-        BCC +
-        INY
-+
-        LDA buf_iters_hr+2
-        ASL
-        ASL
-        ASL
-        ASL
-        STA vdc_tmp
-        LDA buf_iters_hr+3
-        AND #$0F
-        ORA vdc_tmp         ; Attribute value to write (two colors, one per nibble).
-    ;LDA #$F3
-        JSR vdc_mem_write
-        
-        ; Point to the next tile.
+        ; Two halves done. Point to the next tile.
         INC bmp_ptr
         BNE +
         INC bmp_ptr+1
@@ -2681,13 +2707,145 @@ vdc_set_tile_bmp:
 +        
         RTS
  
-vdc_tmp:       .byte 0
-vdc_row_count: .byte 0
-vdc_attr_ptr:  .word 0
-        
+vdc_attr_ptr:  .word 0      ; VDC global: Current tile attributes ptr.
+
+vdc_tmp:       .byte 0      ; render_tile_VDC: Temp data.
+vdc_tmp_ptr_a: .word 0      ; render_tile_VDC: Temp attributes ptr.
+vdc_tmp_ptr_b: .word 0      ; render_tile_VDC: Temp bitmap ptr.
+
+
+;------------- VDC compute histogram -------------
+; Compute histogram of 16 colors in the iteration buffer (buf_it_ptr).
+vdc_compute_histogram:        
+        JSR clear_histogram
+        LDY #0
+-       LDA (buf_it_ptr),Y
+        AND #$0F            ; color = iter % 16
+        TAX
+        INC b_hist,X
+        INY
+        CPY #16             ; 16 pixels per tile half.
+        BNE -
+        RTS
+
+;------------- VDC: Scan histogram -------------
+; Find the 2 most used colors (mod16), and store them sorted in h_top_idx (higher to lower).
+; NOTE: Black (color 0) is counted.
+vdc_scan_histogram:
+            ; Clear results.
+            LDA #0
+            ; Clear top counts.
+            STA h_top_cnt
+            STA h_top_cnt+1
+            ; Y is the result index (0 to 4).
+            LDY #0
+find_next_VDC:
+            ; Scan all 16 entries.
+            LDA #0
+            STA h_top_cnt,Y        ; Highest count found.
+            STA h_top_idx,Y        ; Index of highest found.
+            LDX #15                ; Start comparing with color 15 (down to 0).
+-           LDA b_hist,X           ; Fetch color count to compare.
+            CMP h_top_cnt,Y        ; Is this color more used than current most used ?
+            BCC +                  ; BLT.
+            ; Higher or equal found.
+            STA h_top_cnt,Y        ; Update highest count.
+            STX h_top_idx,Y        ; Update index of highest count.
++           DEX
+            BPL -                  ; Stop after all 16 colors.
+            ; Found the index. Zero its histogram count, so we won't pick it again.
+            LDA h_top_idx,Y
+            TAX
+            LDA #$00
+            STA b_hist,X 
+            ; Find next.
+            INY
+            CPY #2
+            BNE find_next_VDC
+            ; Check if we have "enough" black pixels to force black in.
+            LDA b_hist              ; Black counter.
+            BEQ +                   ; No black pixels.
+            ; Black pixels found. If black is not in the top 2, make it displace the second top.
+            LDA h_top_idx           ; Black is first.
+            CMP #6
+            BCC +                   ; Not enough black pixels.
+            LDA h_top_idx+1         ; Black is second.
+            CMP #6
+            BCC +                   ; Not enough black pixels.
+            ; Displace second from top color.
+            LDA #0
+            STA h_top_idx+1
++           RTS        
+
+;------------- VDC: Set rendered tile row -------------        
+; Render the adapted 8 pixels into bitmap and advance vdc_tmp_ptr_b and buf_it_ptr.
+; Clobbered: [all]
+vdc_best_match_bitmap_and_adv:        
+            LDY #0
+            STY vdc_tmp         ; All 8 pixels clear.
+-           LDA (buf_it_ptr),Y
+    ;JSR print_A_hex
+            AND #$0F            ; color = iter % 16
+            CMP h_top_idx+0
+            BEQ +               ; Equal to h_top[0]. Nothing to do (Carry already set because >=).
+            CMP h_top_idx+1
+            BNE no_exact        ; No exact match found.
+            CLC                 ; Equal to h_top[1]. Clear Carry.
+            BCC +               ; BRA
+no_exact:   ; Not equal to any h_top. Use h_top[lower_bit_of_iters].
+            ROR                 ; Set carry with bit 1 of iters.
+            ROR
++           ROL vdc_tmp         ; Inject pixel into byte.
+            INY
+            CPY #8              ; 8 pixels per byte.
+            BNE -
+            ; Set bitmap.     
+            LDX vdc_tmp_ptr_b+0
+            LDY vdc_tmp_ptr_b+1
+            LDA vdc_tmp
+    ;JSR print_A_hex
+            JSR vdc_mem_write
+            ; Advance tmp bitmap ptr to next row.
+            LDA vdc_tmp_ptr_b+0
+            CLC
+            ADC #80
+            STA vdc_tmp_ptr_b+0
+            BCC +
+            INC vdc_tmp_ptr_b+1
+            ; Advance buf_it_ptr to point to next 8 pixels.
++           LDA buf_it_ptr+0
+            CLC
+            ADC #8
+            STA buf_it_ptr+0
+            BCC +
+            INC buf_it_ptr+1
++           RTS
+
+    
+;------------- VDC: Set most used colors -------------
+; Set VDC attrs to the most used colors in the half-tile.
+vdc_set_most_used_colors:
+            ; Set attributes (background=h_top_idx[0], foreground=h_top_idx[1]).
+            LDX vdc_tmp_ptr_a+0
+            LDY vdc_tmp_ptr_a+1
+            LDA h_top_idx+1
+            ASL
+            ASL
+            ASL
+            ASL
+            STA vdc_tmp
+            LDA h_top_idx+0
+            AND #$0F
+            ORA vdc_tmp         ; Attribute value to write (two colors, one per nibble).
+    ;LDA #$3F
+            JSR vdc_mem_write
+            RTS
+
 .endif ; BUILD_C128    
-    
-    
+
+;^^^^^^^^^^^^^^^^^^^^^^^^ END OF C128-ONLY SECTION ^^^^^^^^^^^^^^^^^^^^^^^^
+
+
 ;------------- Mandelbrot calculation -------------
 .if BUILD_BEEB
         * = $1C00
@@ -3314,7 +3472,7 @@ end_tile:
         JSR scan_histogram
         JSR render_tile_multicolor
         JMP go_to_next_tile
-+       ; Render VDC tile (2x4).
++       ; Render VDC tile (8x4).
         JSR render_tile_VDC
 .elif BUILD_VIC20
         ; No need for histogram (4 fixed colors).
@@ -3381,7 +3539,7 @@ done_vnt:
         LDA mode
         CMP #MODE_VDC
         BNE no_eotH_VDC
-        LDX #2                  ; VDC's HIRES_TILE_H
+        LDX #4                  ; VDC's HIRES_TILE_H
         BNE find_next_t_ay
 .endif
 no_eotH_VDC:
@@ -3404,7 +3562,7 @@ nxt_tile_in_row:
         LDA mode
         CMP #MODE_VDC
         BNE no_eotW_VDC
-        LDX #2                  ; VDC's HIRES_TILE_W
+        LDX #8                  ; VDC's HIRES_TILE_W
         BNE find_next_t_ax
 .endif
 no_eotW_VDC:        
@@ -3448,11 +3606,11 @@ tilex       = var_bytes +  4  ; Current tile x position on screen.
 tiley       = var_bytes +  5  ; Current pixel y position on screen.
 pixelx      = var_bytes +  6  ; Current pixel x position in tile.
 pixely      = var_bytes +  7  ; Current pixel y position in tile.
-b_hist      = var_bytes +  8  ; 4x8 block: Histogram table start (indices are iters mod16).
-b_hist_last = b_hist    + 16  ; 4x8 block: Histogram table end.
-h_top4_cnt  = b_hist_last     ; 4x8 block: Histogram 4 top counts (pixels).
-h_top4_idx  = h_top4_cnt + 4  ; 4x8 block: Histogram 4 top indices (iters mod16).
-b_END       = h_top4_idx + 4  ; --------------
+b_hist      = var_bytes +  8  ; Color histogram table start (indices are iters mod16).
+b_hist_last = b_hist    + 16  ; Color histogram table end.
+h_top_cnt   = b_hist_last     ; Color histogram top counts, max 4 entries (pixels).
+h_top_idx   = h_top_cnt + 4   ; Color histogram top indices, max 4 entries (iters mod16).
+b_END       = h_top_idx + 4   ; --------------
 
 
 ; Words
@@ -3484,7 +3642,7 @@ sram_ptr    = var_words + 44   ; Screen RAM ptr.
 cram_ptr    = var_words + 46   ; Color RAM ptr.
 t_ax        = var_words + 48   ; Current tile ax (upper-left corner x).
 t_ay        = var_words + 50   ; Current tile ay (upper-left corner y).
-
+;tmp_ptr     = var_words + 52   ; Temp pointer.
   
   
  
@@ -3956,9 +4114,9 @@ adc_check:
         CPY #$80            ; Which axis ?
         BNE +
         STA beeb_joy_last_x
-        BEQ chk_thesholds   ; Unconditional.
+        BEQ chk_thresholds  ; Unconditional.
  +      STA beeb_joy_last_y
- chk_thesholds:
+chk_thresholds:
         CMP #32             ; Dead-zone threshold low.
         BCS chk_hi          ; BGE
         ; Low detected.
