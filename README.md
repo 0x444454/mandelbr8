@@ -50,9 +50,9 @@ Note: Kawari 320x200 high resolution is not yet supported (work in progress).
 
 ### C128 80 column mode:
 - First pass: 80x50, 16 colors
-- Second pass: 160x100, 16 colors (64 KB VDC RAM required)
+- Second pass: 640x200, 16 colors (64 KB VDC RAM required)
 
-Note: The 80x50 text mode is experimental and has not been tested on a CRT display.
+Note: All VDC modes are experimental and have not been tested on a CRT display.
 
 ### VIC-20
 - First pass: 22x22, 16 colors
@@ -135,6 +135,8 @@ We use pastel colors on the TED and use Light Gray as the second shared color to
 
 After calculating all colors in the 4x8 tile, we create a color histogram and assign block colors based on the most used ones.  
 Depending on the tile location in the complex plane, some color artifacts might still be noticeable.
+
+The C128 VDC chip has a limitation of 2 colors per 8x2 pixels in hi-res (640x200) mode. This program uses some simple heuristics to pick the two colors.
 
 Note: The C64 with Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported (WIP).
 
