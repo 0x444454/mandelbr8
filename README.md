@@ -1,5 +1,7 @@
 # mandelbr8
-A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
+## A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
+
+![screenshots](media/mandel8-20250228.jpg)
 
 Currently supported CPU types:
 ### 6502
@@ -20,7 +22,9 @@ Currently supported CPU types:
 ### 6809/6309
 [soon]
 
-![screenshots](media/mandel8-20250228.jpg)
+### TMS9900
+That's not a 8-bit machine :-)
+Look here: https://github.com/0x444454/mandel99
 
 # CONTROLS
 
