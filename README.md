@@ -23,7 +23,7 @@ Currently supported CPU types:
 [soon]
 
 ### TMS9900
-That's not a 8-bit machine :-)
+That's not a 8-bit CPU :-)
 Look here: https://github.com/0x444454/mandel99
 
 # CONTROLS
