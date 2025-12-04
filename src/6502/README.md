@@ -6,21 +6,22 @@ Open the ```mandelbr8.asm``` file. At the beginning, you will find the following
 
 ```asm
 ; Enable only the build you need (set to 1).
-BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
-BUILD_C128  = 0 ; Commodore 128.
-BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
-BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
-BUILD_PET   = 0 ; Commodore PET (8 KB required).
-BUILD_B128  = 0 ; Commodore B128 (CBM 610).
-BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
-BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
+BUILD_C64    = 1 ; Commodore 64 (or C128 in C64 mode).
+BUILD_C128   = 0 ; Commodore 128.
+BUILD_MEGA65 = 0 ; Mega65 (384 KB required).
+BUILD_TED    = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
+BUILD_VIC20  = 0 ; Commodore VIC-20 (16 KB required).
+BUILD_PET    = 0 ; Commodore PET (8 KB required).
+BUILD_B128   = 0 ; Commodore B128 (CBM 610).
+BUILD_ATARI  = 0 ; Atari XL/XE (GTIA required).
+BUILD_BEEB   = 0 ; BBC Micro B (32 KB required).
 ```
 
 Enable **only** one build at a time.
 
 # BUILD THE BINARY
 
-### Commodore machines:
+### Commodore machines and Mega65:
 
 Build with TASS:
 
@@ -42,7 +43,7 @@ This will create a minimalistic bootable SSD file.
 
 # LOAD AND RUN
 
-### Commodore machines:
+### Commodore machines and Mega65:
 ```
 LOAD"mandelbr8",8,1
 RUN
