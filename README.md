@@ -85,7 +85,7 @@ Note: Tube accelerators not yet supported.
 
 ### Mega65
 - First pass: 40x25, 16 colors
-- Second pass: 352x200, up to 256 colors (FCM mode)
+- Second pass: 320x200, up to 256 colors (FCM mode)
 
 
 # ALGORITHM
