@@ -1,7 +1,7 @@
 # mandelbr8
 ## A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
 
-![screenshots](media/mandel8-20250228.jpg)
+![screenshots](media/mandel8-20251203.jpg)
 
 Currently supported CPU types:
 ### 6502
@@ -13,6 +13,7 @@ Currently supported CPU types:
 - Commodore CBM-II machines (6xx and 7xx, including the "B128").
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
+- Mega65 (384 KB).
 
 [more soon]
 
@@ -29,7 +30,7 @@ Look here: https://github.com/0x444454/mandel99
 # CONTROLS
 
 The app is simply controlled using a joystick:
-- C64/C128: Joystick port 2.
+- C64/C128/Mega65: Joystick port 2.
 - TED machines: Joystick port 1.
 - PET and CBM-II machines: WASD for directions and SHIFT for fire button.
 - Atari XL/XE: Joystick port 1.
@@ -81,6 +82,10 @@ Note: This uses ANTIC mode F.1 (GTIA 16 luma mode).
 - Second pass: 160x256, 8 colors
 
 Note: Tube accelerators not yet supported.
+
+### Mega65
+- First pass: 40x25, 16 colors
+- Second pass: 352x200, up to 256 colors (FCM mode)
 
 
 # ALGORITHM
