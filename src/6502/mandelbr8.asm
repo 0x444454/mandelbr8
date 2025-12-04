@@ -28,20 +28,26 @@
 ;   2025-02-15: Added support for C128 VDC 160x100 (64KB VDC VRAM required). [DDT]
 ;   2025-02-24: Studying CBM2 machines and 6509 CPU to support B128. [DDT]
 ;   2025-02-25: Support for B128. [DDT]
-;   2025-03-29: Improved hi-res support for C128 with 64KB VDC (640x200). [DDT]
+;   2025-03-29: Added initial support for Apple-II (not yet implemented) [DDT]
+;   2025-12-01: Studying Mega65 machines and 45GS02 CPU. [DDT]
+;   2025-12-02: Added initial support for MEGA65 [DDT]
+;   2025-12-03: Completed support for MEGA65 [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
-BUILD_C64   = 1 ; Commodore 64 (or C128 in C64 mode).
-BUILD_C128  = 0 ; Commodore 128.
-BUILD_TED   = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
-BUILD_VIC20 = 0 ; Commodore VIC-20 (16 KB required).
-BUILD_PET   = 0 ; Commodore PET (8 KB required).
-BUILD_B128  = 0 ; Commodore B128 (CBM 610).
-BUILD_ATARI = 0 ; Atari XL/XE (GTIA required).
-BUILD_BEEB  = 0 ; BBC Micro B (32 KB required).
+BUILD_C64    = 1 ; Commodore 64 (or C128 in C64 mode).
+BUILD_C128   = 0 ; Commodore 128.
+BUILD_MEGA65 = 0 ; Mega65 (384 KB required).
+BUILD_TED    = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
+BUILD_VIC20  = 0 ; Commodore VIC-20 (16 KB required).
+BUILD_PET    = 0 ; Commodore PET (8 KB required).
+BUILD_B128   = 0 ; Commodore B128 (CBM 610).
+BUILD_ATARI  = 0 ; Atari XL/XE (GTIA required).
+BUILD_BEEB   = 0 ; BBC Micro B (32 KB required).
+BUILD_APPLE2 = 0 ; *** NOT IMPLEMENTED *** Apple II+ (16 KB required).
 
-CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUILD_B128 + BUILD_ATARI + BUILD_BEEB
+
+CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUILD_B128 + BUILD_ATARI + BUILD_BEEB + BUILD_APPLE2
 .if CHECK_BUILD < 1 || CHECK_BUILD > 1
     .error "ENABLE ONE AND ONLY ONE BUILD."
 .endif
@@ -51,6 +57,8 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUI
   * = $0801   ; C64
 .elif BUILD_C128
   * = $1C01   ; C128
+.elif BUILD_MEGA65
+  * = $2001   ; Mega65
 .elif BUILD_TED
   * = $1001   ; TED machines (C16 and Plus/4)
 .elif BUILD_VIC20
@@ -64,9 +72,12 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUI
   * = $1800   ; Atari XL/XE
 .elif BUILD_BEEB
   LOAD_ADDRESS = $1800   ; BBC Micro
+.elif BUILD_APPLE2
+  LOAD_ADDRESS = $1004   ; Apple II+. We align code start to track $01, sector $00, byte $04 (due to 4 bytes binary exe header).
 .endif
+
   
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_VIC20 | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_VIC20 | BUILD_PET | BUILD_B128
   .word end_BASIC
   .word 10
 
@@ -79,12 +90,20 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUI
     .text $2c,$30,$3A                                                     ; ,0:
 .endif
 
+.if BUILD_MEGA65
+    ; Add a BANK0 command.
+    .text $FE,$02     ; BANK
+    .text "0:"        ; "0:"
+.endif
+
   .byte $9e ; SYS
 
   .if BUILD_C64  
     .text "2061", $00 ; C64
   .elif BUILD_C128
     .text "7181", $00 ; C128
+  .elif BUILD_MEGA65
+    .text "8209", $00 ; Mega65
   .elif BUILD_TED
     .text "4109", $00 ; TED
   .elif BUILD_VIC20
@@ -136,8 +155,66 @@ end_BASIC:
 .endif
 ; END: BBC Micro -----------------
 
+
+
+       
+; BEGIN: APPLE II+ -----------------
+.if BUILD_APPLE2
+        ; We generate a DSK file, i.e. a DOS 3.3 floppy disk image containing this program.
+        ; A floppy disk contains 35 tracks (tt) of 16 sectors (s) of 256 bytes (bb).
+        ; We assemble directly into $ttsbb "on disk".
         
+        ; Track 0 cannot be used for files (only bootloader and OS stuff here).
+        * = $00000 ; Track 0, sector 0, byte 0.
+        ; This is the boot sector (0).
+
+.logical $800        
+; This will run from $0800
+;.byte $01 ; The first byte is the number of sectors to load (technically ignored by ROM but used by DOS).
+
+        ; TODO: Maybe use qboot: https://github.com/peterferrie/qboot
+
+        ; Quick test.
+;        LDX #0
+;-       LDA boot_msg,X
+;        BEQ +
+;        STA $0400,X
+;        INX
+;        BNE -
+;+       
+         
+
+;-------------------------------
+boot_msg:        
+.enc "screen"
+.text "loading mandelbr8...",0
+.enc "none"
+
+.endlogical
+        ; Second sector (1). DEBUG ONLY.
+        * = $0200
+.byte 1,2,3,4,5        
+        
+;.fill $1000,0      ; This should actually contain DOS 3.3 boot code.
+
+        
+        ; Our code starts on disk at track $01, sector $0, byte $00.
+        * = $01000 ; Track 1, sector 0, byte 0.
+       
+        ; Generate the Apple II executable file header (DOS 3.3).
+.word LOAD_ADDRESS                  ; Load address (LO/HI).
+.word END_ADDRESS - LOAD_ADDRESS    ; Code length in bytes (LO/HI).
+
+        ;* = LOAD_ADDRESS
+        ;LDA #$aa
+        ;STA $0400
+        ;RTS
+.endif
+; END: APPLE II+ -----------------
+
+
 main:
+
 .if BUILD_B128
         ; 4 NOPs to align main code after poked-in bank switch.
         NOP
@@ -301,6 +378,73 @@ done_BEEB:
         ; Configure C128 MMU. Kick ROM out of the way.
         LDA #$3E            ; All Bank0 RAM but keep I/O regs ($D000-$DFFF).
         STA $D500
+
+.elif BUILD_MEGA65
+        .cpu "45gs02"   ; Enable 45GS02 CPU opcodes.
+ 
+        ; Clear C65 memory map
+        LDA #$00
+        TAX
+        TAY
+        TAZ
+        MAP
+        ; Bank I/O in via C64 mechanism
+        LDA #$35
+        STA $01
+        ; Do MEGA65 / VIC-IV I/O knock
+        LDA #$47
+        STA $D02F
+        LDA #$53
+        STA $D02F
+        ; End MAP sequence , thus allowing interrupts to occur again
+        EOM
+        
+        ; Disable hot registers
+        LDA #%10000000      ; Bit to clear.
+        TRB $D05D           ; $D05D &= !A
+
+        ;; Enable CRAM2K
+        ;LDA #%00000001      ; Bit to set.
+        ;TSB $D030           ; $D030 |= A
+        ;LDA #%00000001      ; Bit to set.
+        ;TSB $D030           ; $D030 |= A
+        
+        ; Load 256 colors palette.
+        LDA #<palette_256_RGB
+        STA q_ptr
+        LDA #>palette_256_RGB
+        STA q_ptr+1
+        LDX #0
+-       LDY #0
+        ; Red
+        LDA (q_ptr),Y
+        JSR swap_nibbles
+        ;AND #$EF            ; Clear transparency bit
+        STA $D100,X
+        ; Green
+        INY
+        LDA (q_ptr),Y
+        JSR swap_nibbles
+        STA $D200,X
+        ; Blue
+        INY
+        LDA (q_ptr),Y
+        JSR swap_nibbles      
+        STA $D300,X
+        LDA q_ptr
+        CLC
+        ADC #3
+        STA q_ptr
+        BCC +
+        INC q_ptr+1
++       INX
+        BNE -
+        
+        ; Do Hypervisor call to un -write - protect the ROM area ($20000-$3FFFF).
+        LDA #$70
+        STA $D640
+        NOP                ; This NOP is mandatory.
+       
 .elif BUILD_ATARI
         ; Disable IRQs.
         ;LDA #$00
@@ -461,7 +605,7 @@ done_expansion:
       
         ; Check machine.
 
-.if BUILD_C64
+.if BUILD_C64 ; Kawari is only available on C64, at the moment.
         ; Check for Kawari, trying to enable extended features.
         LDA #86 ; 'V'
         STA $D03F
@@ -600,8 +744,8 @@ no_VDC:
 
 no_C128:
        
-        ; Common C64 and C128 initialization.
-.if BUILD_C64 | BUILD_C128        
+        ; Common C64, C128, MEGA65 initialization.
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65       
         ; Setup CIA1
         LDA #$FF
         STA $DC02 ; DDRA all R/W
@@ -748,7 +892,7 @@ space_pressed:
 .endif
         
         ; Only build squares table if we have at least 64 KB RAM.
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_ATARI | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_ATARI | BUILD_B128
         ; Initialize Q4.10 squares table.
         JSR init_squares_q4_10
 .endif
@@ -792,7 +936,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2025-03-29", $0D
+        .text "version 2025-12-03", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -887,16 +1031,28 @@ atari_IRQ:
   COL_BGND     = $D021
   LORES_W      = 40
   LORES_H      = 25
-  HIRES_W      = 160   ; NOTE: This is for VIC-II hires (not VDC).
-  HIRES_H      = 200   ; NOTE: This is for VIC-II hires (not VDC).
-  HIRES_TILE_W = 4     ; NOTE: This is for VIC-II hires (not VDC).
-  HIRES_TILE_H = 8     ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_W      = 160        ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_H      = 200        ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_TILE_W = 4          ; NOTE: This is for VIC-II hires (not VDC).
+  HIRES_TILE_H = 8          ; NOTE: This is for VIC-II hires (not VDC).
   BITMAP_START = $2000
+.elif BUILD_MEGA65
+  SCR_RAM      = $0800
+  COL_RAM      = $D800
+  COL_BORDER   = $D020
+  COL_BGND     = $D021
+  LORES_W      = 40
+  LORES_H      = 25
+  HIRES_W      = 320        ; NOTE: This is for VIC-IV hires
+  HIRES_H      = 200        ; NOTE: This is for VIC-IV hires
+  HIRES_TILE_W = 8          ; NOTE: This is for VIC-IV hires
+  HIRES_TILE_H = 8          ; NOTE: This is for VIC-IV hires
+  BITMAP_START = $20000
 .elif BUILD_TED
-  SCR_RAM      = $0C00 ; Video matrix
-  COL_RAM      = $0800 ; Attributes matrix
+  SCR_RAM      = $0C00      ; Video matrix
+  COL_RAM      = $0800      ; Attributes matrix
   COL_BORDER   = $FF19
-  COL_BGND     = $FF15 ; Background register #0
+  COL_BGND     = $FF15      ; Background register #0
   LORES_W      = 40
   LORES_H      = 25
   HIRES_W      = 160
@@ -905,22 +1061,22 @@ atari_IRQ:
   HIRES_TILE_H = 8  
   BITMAP_START = $2000
 .elif BUILD_VIC20
-  SCR_RAM      = $0200 ; Video matrix.
+  SCR_RAM      = $0200      ; Video matrix.
   COL_RAM      = $9600
-  COL_BORDER   = $900F ; Border and background are in the same register. Border is [2..0].
-  COL_BGND     = $900F ; Border and background are in the same register. Background is [7..4].
+  COL_BORDER   = $900F      ; Border and background are in the same register. Border is [2..0].
+  COL_BGND     = $900F      ; Border and background are in the same register. Background is [7..4].
   LORES_W      = 22
   LORES_H      = 22
   HIRES_W      = LORES_W*4
-  HIRES_H      = LORES_H/2*16 ; I.e. 11 rows of chars, 16 lines per char.
+  HIRES_H      = LORES_H/2*16   ; I.e. 11 rows of chars, 16 lines per char.
   HIRES_TILE_W = 4
   HIRES_TILE_H = 8
-  BITMAP_START = $1000 ; Charset defined at $1000.
+  BITMAP_START = $1000      ; Charset defined at $1000.
 .elif BUILD_PET
-  SCR_RAM      = $8000 ; Video matrix.
-  COL_RAM      = $8800 ; Only works on PET supporting color.
-  COL_BORDER   = $FFFF ; Dummy.
-  COL_BGND     = $FFFF ; Dummy.
+  SCR_RAM      = $8000      ; Video matrix.
+  COL_RAM      = $8800      ; Only works on PET supporting color.
+  COL_BORDER   = $FFFF      ; Dummy.
+  COL_BGND     = $FFFF      ; Dummy.
   LORES_W      = 40
   LORES_H      = 25
   HIRES_W      = 0
@@ -929,34 +1085,34 @@ atari_IRQ:
   HIRES_TILE_H = 0
   BITMAP_START = $0000
 .elif BUILD_B128
-  SCR_RAM      = $D000 ; Video matrix (bank 15).
-  COL_RAM      = $0000 ; No Color RAM.
-  COL_BORDER   = $FFFF ; Dummy.
-  COL_BGND     = $FFFF ; Dummy.
-  LORES_W      = 40    ; This is for the 40-col model (though we currently support only 80-col model).
+  SCR_RAM      = $D000      ; Video matrix (bank 15).
+  COL_RAM      = $0000      ; No Color RAM.
+  COL_BORDER   = $FFFF      ; Dummy.
+  COL_BGND     = $FFFF      ; Dummy.
+  LORES_W      = 40         ; This is for the 40-col model (though we currently support only 80-col model).
   LORES_H      = 25
   HIRES_W      = 0
   HIRES_H      = 0
   HIRES_TILE_W = 0
   HIRES_TILE_H = 0
-  BITMAP_START = $0000 ; No bitmap.
+  BITMAP_START = $0000      ; No bitmap.
 .elif BUILD_ATARI
-  SCR_RAM      = $0400 ; Video matrix.
-  COL_RAM      = $0400 ; ?
-  COL_BORDER   = $D01A ; COLBK (border is same as background).
-  COL_BGND     = $D01A ; ?
+  SCR_RAM      = $0400      ; Video matrix.
+  COL_RAM      = $0400      ; ?
+  COL_BORDER   = $D01A      ; COLBK (border is same as background).
+  COL_BGND     = $D01A      ; ?
   LORES_W      = 40
   LORES_H      = 25
   HIRES_W      = 80
   HIRES_H      = 200
   HIRES_TILE_W = 2
   HIRES_TILE_H = 8
-  BITMAP_START = $2060 ; Bitmap starts at $2060 to allow hitting $3000 exactly in the middle of the screen (ANTIC 4KB limitation). 
+  BITMAP_START = $2060      ; Bitmap starts at $2060 to allow hitting $3000 exactly in the middle of the screen (ANTIC 4KB limitation). 
 .elif BUILD_BEEB
-  SCR_RAM      = $3000 ; Video matrix (this is actually a MODE 2: bitmap).
-  COL_RAM      = $3000 ; No color RAM. Unfortunately, TASS64 has no .ifdef.
-  COL_BORDER   = $FFFF ; Dummy.
-  COL_BGND     = $FFFF ; Dummy.
+  SCR_RAM      = $3000      ; Video matrix (this is actually a MODE 2: bitmap).
+  COL_RAM      = $3000      ; No color RAM. Unfortunately, TASS64 has no .ifdef.
+  COL_BORDER   = $FFFF      ; Dummy.
+  COL_BGND     = $FFFF      ; Dummy.
   LORES_W      = 40
   LORES_H      = 32
   HIRES_W      = 160
@@ -964,11 +1120,23 @@ atari_IRQ:
   HIRES_TILE_W = 4
   HIRES_TILE_H = 8
   BITMAP_START = $3000
+.elif BUILD_APPLE2
+  SCR_RAM      = $0400      ; Video matrix.
+  COL_RAM      = $0000      ; Not present.
+  COL_BORDER   = $FFFF      ; Dummy.
+  COL_BGND     = $FFFF      ; Dummy.
+  LORES_W      = 40
+  LORES_H      = 24
+  HIRES_W      = 140
+  HIRES_H      = 192
+  HIRES_TILE_W = 7
+  HIRES_TILE_H = 8
+  BITMAP_START = $2000  
 .endif
 
 
 ; The following is a bitmask, for faster checks.
-MODE_VIC      =   $01       ; VIC-like video. E.g. VIC, VIC-II, TED, PET, et cetera.
+MODE_VIC      =   $01       ; VIC-like video. E.g. VIC, VIC-II, VIC-III, VIC-IV, TED, PET, et cetera.
 MODE_KAWARI   =   $02
 MODE_VDC      =   $04
 MODE_BEEB     =   $08
@@ -981,7 +1149,7 @@ vdc_has_64K:            .byte 0     ; Boolean: 0=false; non-0=true.
 vdc_hires_even_color:   .byte 0     ; Color of current hires even pixel.
 .endif
 
-.if BUILD_C64
+.if BUILD_C64 | BUILD_MEGA65 ; Kawari is only available on C64, at the moment.
 kawari_palette_RGB:
     .byte   0,   0,   0,  0
     .byte  10,   7,  40,  0
@@ -1003,6 +1171,61 @@ kawari_palette_LPA:
     .byte $19, $02, $00, $20, $27, $2e, $30, $33, $36, $38, $37, $35, $33, $30, $2c, $28 ; Luma  (6 bits).
     .byte $00, $00, $00, $0a, $05, $f0, $e0, $d0, $ca, $70, $66, $66, $63, $61, $69, $6a ; Phase (8 bits).
     .byte  $0,  $8,  $c,  $f,  $f,  $f,  $f,  $f,  $6,  $4,  $b,  $f,  $e,  $f,  $f,  $f ; Amp   (4 bits).
+.endif
+
+.if BUILD_MEGA65
+palette_256_RGB:
+    .byte   0,   0,   0,      0,  29, 144,     61,  66, 144,     99,  87, 141,    130, 107, 135,    156, 124, 126,    179, 140, 115,    209, 162,  97
+    .byte 230, 180,  89,    245, 192,  83,    249, 205, 110,    234, 216, 154,    223, 217, 199,    216, 216, 217,    212, 207, 218,    207, 193, 220
+    .byte 201, 174, 222,    198, 160, 221,    197, 158, 220,    197, 156, 220,    196, 154, 220,    196, 151, 220,    195, 149, 220,    195, 147, 219
+    .byte 194, 145, 219,    194, 142, 219,    193, 140, 219,    193, 138, 218,    192, 135, 218,    192, 133, 218,    191, 130, 218,    191, 128, 217
+    .byte 190, 125, 217,    190, 122, 217,    189, 120, 216,    189, 117, 216,    188, 114, 216,    187, 112, 215,    187, 109, 215,    186, 106, 215
+    .byte 186, 103, 214,    185, 100, 214,    185,  97, 214,    184,  93, 214,    183,  90, 213,    183,  87, 213,    182,  84, 212,    182,  80, 212
+    .byte 181,  77, 212,    180,  73, 211,    180,  70, 211,    179,  66, 211,    178,  62, 210,    178,  58, 210,    177,  54, 210,    176,  49, 209
+    .byte 176,  44, 209,    175,  40, 209,    174,  34, 208,    174,  28, 208,    173,  21, 207,    172,  13, 207,    171,   0, 206,    170,   0, 206
+    .byte 168,   0, 205,    167,   0, 204,    165,   0, 203,    164,   0, 202,    162,   0, 201,    160,   0, 200,    159,   0, 199,    157,   0, 198
+    .byte 155,   0, 197,    153,   0, 196,    151,   0, 194,    149,   0, 193,    147,   0, 192,    145,   0, 190,    142,   0, 189,    140,   0, 188
+    .byte 138,   0, 186,    135,   0, 185,    133,   0, 183,    131,   0, 182,    128,   0, 180,    125,   0, 178,    123,   0, 177,    121,   0, 176
+    .byte 121,   0, 176,    121,   0, 175,    120,   0, 175,    120,   0, 175,    119,   0, 175,    119,   0, 174,    118,   0, 174,    118,   0, 174
+    .byte 118,   0, 174,    117,   0, 173,    117,   0, 173,    116,   0, 173,    116,   0, 173,    116,   0, 172,    115,   0, 172,    115,   0, 172
+    .byte 114,   0, 172,    114,   0, 171,    113,   0, 171,    113,   0, 171,    112,   0, 171,    112,   0, 170,    112,   0, 170,    111,   0, 170
+    .byte 111,   0, 170,    110,   0, 169,    110,   0, 169,    109,   0, 169,    109,   0, 169,    108,   0, 168,    108,   0, 168,    108,   0, 168
+    .byte 107,   0, 168,    107,   0, 167,    106,   0, 167,    106,   0, 167,    105,   0, 167,    105,   0, 166,    104,   0, 166,    104,   1, 166
+    .byte 103,   3, 166,    103,   5, 165,    102,   6, 165,    102,   8, 165,    101,   9, 165,    101,  11, 164,    101,  13, 164,    100,  14, 164
+    .byte 100,  15, 164,     99,  16, 163,     99,  18, 163,     98,  19, 163,     98,  20, 162,     97,  21, 162,     97,  22, 162,     96,  23, 162
+    .byte  96,  23, 161,     95,  24, 161,     95,  25, 161,     94,  26, 161,     94,  27, 160,     93,  28, 160,     93,  28, 160,     92,  29, 160
+    .byte  92,  30, 159,     91,  30, 159,     91,  31, 159,     90,  32, 159,     90,  32, 158,     89,  33, 158,     89,  34, 158,     88,  34, 158
+    .byte  88,  35, 157,     87,  35, 157,     86,  36, 157,     86,  37, 157,     85,  37, 156,     85,  38, 156,     84,  38, 156,     84,  39, 156
+    .byte  83,  39, 155,     83,  40, 155,     82,  40, 155,     82,  41, 155,     81,  41, 155,     81,  42, 154,     80,  42, 154,     79,  43, 154
+    .byte  79,  43, 154,     78,  43, 153,     78,  44, 153,     77,  44, 153,     77,  45, 153,     76,  45, 152,     76,  45, 152,     75,  46, 152
+    .byte  74,  46, 152,     74,  47, 151,     73,  47, 151,     73,  47, 151,     72,  48, 151,     71,  48, 150,     71,  48, 150,     70,  49, 150
+    .byte  70,  49, 150,     69,  50, 150,     69,  50, 149,     68,  50, 149,     67,  50, 149,     67,  51, 149,     66,  51, 148,     65,  51, 148
+    .byte  65,  52, 148,     64,  52, 148,     64,  52, 148,     63,  53, 147,     62,  53, 147,     62,  53, 147,     61,  53, 147,     60,  54, 146
+    .byte  60,  54, 146,     59,  54, 146,     59,  54, 146,     58,  55, 146,     57,  55, 145,     57,  55, 145,     56,  55, 145,     55,  56, 145
+    .byte  55,  56, 145,     54,  56, 144,     53,  56, 144,     53,  57, 144,     52,  57, 144,     51,  57, 144,     50,  57, 143,     50,  57, 143
+    .byte  49,  57, 143,     48,  58, 143,     48,  58, 143,     47,  58, 142,     46,  58, 142,     45,  58, 142,     45,  59, 142,     44,  59, 142
+    .byte  43,  59, 141,     42,  59, 141,     42,  59, 141,     41,  59, 141,     40,  59, 141,     39,  60, 141,     39,  60, 140,     38,  60, 140
+    .byte  37,  60, 140,     36,  60, 140,     35,  60, 140,     34,  60, 140,     34,  60, 139,     33,  60, 139,     32,  60, 139,     31,  61, 139
+    .byte  30,  61, 139,     29,  61, 139,     28,  61, 139,     27,  61, 138,     26,  61, 138,     25,  61, 138,     24,  61, 138,     24,  61, 138; This is needed by the Mega65 to swap the two nibbles of a palette component.
+
+swap_nibbles:
+        TAZ
+        AND #$0F        ; low nibble
+        ASL             ; << 4
+        ASL
+        ASL
+        ASL
+        STA SN_TMP      ; save high nibble
+        TZA
+        AND #$F0        ; high nibble
+        LSR             ; >> 4
+        LSR
+        LSR
+        LSR
+        ORA SN_TMP
+        RTS
+
+sn_tmp: .byte 0
 .endif
 
 ;------------- print routine (no Kernal was harmed in the making of this routine) -------------
@@ -1047,7 +1270,7 @@ pr_no_CLS:
         ; ASCII char. Convert to screen code.
         CLC
         CMP #32
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128
         BPL +
         ADC #128 ; Commodore
 .else
@@ -1061,7 +1284,7 @@ pr_no_CLS:
         CMP #97
         BPL +
         SEC
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128  
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128  
         SBC #64
 .else
         SBC #32 ; ATARI
@@ -1069,7 +1292,7 @@ pr_no_CLS:
         JMP done_conv
 +       CMP #128
         BPL done_conv
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128
         SEC
         SBC #32
 .endif        
@@ -1253,7 +1476,7 @@ nxt_page:
         AND #MODE_VIC | MODE_KAWARI
         BEQ no_vic2_or_kawari
         LDX #$00
-.if BUILD_C64 | BUILD_C128 | BUILD_TED | BUILD_PET
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET
         LDA #$A0 ; Use reverse spaces.
 .else
         LDA #$20 ; Use spaces.
@@ -1281,8 +1504,10 @@ nxt_page:
         LDX #$00
 .if BUILD_C64 | BUILD_C128 | BUILD_TED       
         LDA #$71 ; Commodore: White (upper nibble is only used by TED for luma).
+.elif BUILD_MEGA65
+        LDA #$00 ; Palette entry 0 should be black.
 .else
-        LDA #$00 ; Atari: Black.
+        LDA #$00 ; Atari and others: Black.
 .endif
 
 .if COL_RAM
@@ -1555,6 +1780,146 @@ vic_multicolor_table:
 ctdwn_cols:  .byte 0
 ctdwn_rows:  .byte 0
 
+.elif BUILD_MEGA65
+
+        ; Set 320x200
+        LDA #$60
+        STA $D031
+        ; Set bytes per row.
+        LDA #40             ; Lo-res: Set 40 bytes per row (i.e. 40 single-byte chars).
+        STA $D05E           ; Display 40 chars per row (that's for both lo-res and hi-res).
+        LDA #40             ; Lo-res: Set 40 bytes per row.
+        STA $D058           ; Virtual Row Width (L)
+        LDA #0
+        STA $D059           ; Virtual Row Width (H)
+        ; Set $D054 for lo-res:
+        ;   6:VFAST (48 MHz mode).
+        LDA #$40
+        STA $D054
+        LDX res
+        BEQ m65_done
+        
+        ; Hi-res.
+
+        ; Set $D054 for hi-res:
+        ;   0:CHR16 (16 bit chars)
+        ;   1:FCLRLO (Full Color Mode for chars <= $FF)
+        ;   2:FCLRHI (Full Color Mode for chars  > $FF)
+        ;   6:VFAST (48 MHz mode).
+        LDA #$47
+        STA $D054        
+        
+        ;; Set charset ptr in memory at $20000.
+        ;LDA #$00
+        ;STA $D068           ; CHARPTRLSB
+        ;STA $D069           ; CHARPTRMSB
+        ;LDA #$02
+        ;STA $D06A           ; CHARPTRBNK
+        
+        LDA #80             ; Hi-res: Set 80 bytes per row (i.e. 40 double-byte chars).
+        STA $D058           ; Virtual Row Width (L)
+        
+        ; Prepare CRAM for double chars.
+       
+COL_RAM_32 = $0FF80000
+;COL_RAM_32 = $0001F800
+;COL_RAM_32 = $0000D800
+
+        LDA #<(COL_RAM_32+999)
+        STA cram_ptr
+        LDA #>(COL_RAM_32+999)
+        STA cram_ptr+1
+        LDA #$F8
+        STA cram_ptr+2
+        LDA #$0F
+        STA cram_ptr+3
+        
+        LDA #<(COL_RAM_32+(999*2))
+        STA q_ptr
+        LDA #>(COL_RAM_32+(999*2))
+        STA q_ptr+1
+        LDA #$F8
+        STA q_ptr+2
+        LDA #$0F
+        STA q_ptr+3
+        
+        LDZ #0
+-       LDA #$00
+        STA [q_ptr],Z       ; Color RAM byte 0
+        LDA [cram_ptr],Z
+        ;AND #$0F
+        INZ
+        STA [q_ptr],Z       ; Color RAM byte 1
+        DEZ
+        LDA cram_ptr
+        BNE +
+        DEC cram_ptr+1
++       DEC cram_ptr
+        LDA q_ptr
+        BNE +
+        DEC q_ptr+1
+ +      DEC q_ptr
+        DEC q_ptr
+        LDA cram_ptr+1
+        CMP #>(COL_RAM_32-$100)
+        BNE -
+
+        ; Set char values.
+        ; The address of the data is 64 * the character number, regardless of the character set base address.
+        LDA #$00
+        TAY
+        LDA #<((BITMAP_START)/64)
+        STA bmp_ptr 
+        LDA #>((BITMAP_START)/64)
+        STA bmp_ptr+1
+        LDA #<SCR_RAM
+        STA scr_ptr
+        LDA #>SCR_RAM
+        STA scr_ptr+1
+
+-       LDA bmp_ptr             ; Get char ptr (/64) LO.
+      ;LDA #$00
+        STA (scr_ptr),Y         ; Store in Screen RAM byte 0.
+        INY
+        LDA bmp_ptr+1           ; Get char ptr (/64) HI.
+      ;LDA #$00
+        AND #$1F                ; Only bit [4..0] are used for the ptr.
+        STA (scr_ptr),Y         ; Store in Screen RAM byte 1.
+        DEY
+        INC bmp_ptr             ; Inc by 1: Point to next 64-bytes tile.
+        BNE +
+        INC bmp_ptr+1
++       INC scr_ptr
+        INC scr_ptr
+        BNE -
+        INC scr_ptr+1           ; Inc by 2: Point to next Screen RAM double-byte.
+        LDA scr_ptr+1
+        CMP #>(SCR_RAM+$0800)
+        BNE -
+        
+        ; Set the 64000 bitmap bytes (pixels) at $20000 to all $FF.
+        LDZ #$00
+        LDX #$02
+        STZ q_ptr
+        STZ q_ptr+1
+        STX q_ptr+2
+        STZ q_ptr+3
+        LDA #$FF        ; The special pixel value $ff will select the color code defined by the Color RAM.
+    ;LDA #$03
+        LDY #$FA        ; 250 * 256 = 64000
+        LDZ #$00
+-       STA [q_ptr],Z
+        INZ
+        BNE -
+        INC q_ptr+1
+        DEY
+        BNE -
+        
+ m65_done:
+        LDA #$FF            ; Z = 0 (supported).
+        RTS
+ 
+
 .elif BUILD_ATARI
         LDA #$14            ; High byte of display list address (default to lo-res).
         LDX res
@@ -1662,6 +2027,8 @@ switch_display_list:
         ; Return OK
         LDA #1
         JMP end_applymode
+.elif BUILD_APPLE2
+        LDA $C050           ; Just read from $C050.
 .else
         ; Unhandled mode.
         LDA #0          ; Return ERROR
@@ -1673,9 +2040,8 @@ end_applymode:
 
 tmp_bmp_line: .byte 0
 
-
 ;------------- Clear bitmap -------------
-; Clear the bitmap ($2000 to $3FFF). That works for Atari too (bitmap starts at $2060).
+; Clear the bitmap ($2000 to $3FFF). This works for Atari too (bitmap starts at $2060).
 ; Clobbered: A, X
 clear_bitmap:
         LDA #$20
@@ -1918,6 +2284,27 @@ tmp_A: .byte 0
 tmp_X: .byte 0
 
 
+.if BUILD_MEGA65
+;------------- Render tile (Mega65 version) -------------
+render_tile_MEGA65:
+        LDA #<buf_iters_hr
+        STA buf_it_ptr
+        LDA #>buf_iters_hr
+        STA buf_it_ptr+1
+
+        LDZ #0           ; Current tile pixel [0..63].
+-       LDA (buf_it_ptr),Z
+        STA [q_ptr],Z
+        INZ
+        CPZ #64
+        BNE -
+
+        JSR bmp_to_next_tile
+        
+        RTS
+.endif
+
+
 .if BUILD_ATARI
 ;------------- Render tile (ATARI version) -------------
 ; Render a hi-res tile in ATARI mode F.1 (2x8 pixels per tile).
@@ -1936,7 +2323,7 @@ render_tile_ATARI:
         STA buf_it_ptr
         LDA #>buf_iters_hr
         STA buf_it_ptr+1
-        LDY #0           ; Current tile pixel [0..16].
+        LDY #0           ; Current tile pixel [0..15].
         LDX #0
 nxt_tile_line_A:
         ; Each tile line contains two pixels.
@@ -2885,14 +3272,14 @@ Mandelbrot:
 .endif
 
 
-      
-        
         LDA #<start_ax
+        ;AND #$F8
         STA ax
         LDA #>start_ax
         STA ax+1
     
         LDA #<start_ay
+        ;AND #$F8
         STA ay
         LDA #>start_ay
         STA ay+1
@@ -2963,7 +3350,6 @@ nxt_pass:
         AND #MODE_VIC | MODE_KAWARI | MODE_BEEB ; Check for VIC2 and similar chips.
         BNE +
         JMP no_VIC2ish_setup
-
       
         ;------ VIC2
 +       LDA res
@@ -3006,12 +3392,13 @@ hi_res:
         STA bmp_ptr
         LDA #>BITMAP_START
         STA bmp_ptr+1
-        LDA #HIRES_W
+        LDA #<HIRES_W
         STA screenw
-        LDA #HIRES_H
-        STA screenh
-        LDA #0
+        LDA #>HIRES_W
         STA screenw+1
+        LDA #<HIRES_H
+        STA screenh
+        LDA #>HIRES_H
         STA screenh+1
         LDA #LORES_W
         STA num_tiles_w
@@ -3023,9 +3410,20 @@ hi_res:
         STA tileh
         LDA #HIRES_TILE_W*HIRES_TILE_H ; Pixels per tile.
         STA buf_tile_size
+.if BUILD_MEGA65
+        ; Init quad ptr to start of bitmap tiles ($20000).
+        LDZ #$00
+        LDX #$02
+        STZ q_ptr
+        STZ q_ptr+1
+        STX q_ptr+2
+        STZ q_ptr+3
+.endif        
         ; Update incs for second-pass.
 .if BUILD_ATARI        
-        LDX #1        ; Rotate twice to divide lo-res incx by 2.
+        LDX #1        ; Rotate once to divide lo-res incx by 2.
+.elif BUILD_MEGA65
+        LDX #3        ; Rotate thrice to divide lo-res incx by 8.
 .else
         LDX #2        ; Rotate twice to divide lo-res incx by 4.
 .endif
@@ -3034,12 +3432,14 @@ hi_res:
         ROR incx
         DEX
         BNE -
+        
         LDX #3        ; Rotate thrice to divide lo-res incy by 8.
 -       CLC
         ROR incy+1
         ROR incy
         DEX
         BNE -
+        
         LDA incy
         BNE +
         ; Zoomed-in too much, set minimum incs.
@@ -3050,7 +3450,7 @@ hi_res:
 +    
         ; Sub|add half lo-res pixel to ax|ay, to use previously calculated lo-res iter as centroid iter.
         LDA incx_lr
-        TAX
+        TAX             ; Save cur incx_lr
         CLC
         ROR incx_lr
         LDA ax
@@ -3060,7 +3460,8 @@ hi_res:
         LDA ax+1
         SBC #0
         STA ax+1
-        STX incx_lr
+        STX incx_lr     ; Restore cur incx_lr
+        
         LDA incy_lr
         CLC
         ROR
@@ -3237,6 +3638,8 @@ zx2_done:
     
 
         ; zy = 2 * zx * zy
+        
+.if BUILD_C64        
         LDA mode
         AND #MODE_KAWARI
         BEQ zxzy_sw
@@ -3259,6 +3662,44 @@ zx2_done:
         LDA $D02F       ; RESULT_HH
         STA z3
         JMP zxzy_done
+.elif BUILD_MEGA65
+        ; Use Mega65 hardware muls.
+        
+        ; MULTINA
+        LDQ x0
+        STA $D770       ; MULTINA_LO
+        LDA x1
+        STA $D771       ; MULTINA_HI
+        CMP #$80        ; Set carry if negative.
+        LDA #$00
+        BCC +
+        LDA #$FF
++       ; Sign extend.
+        STA $D772
+        STA $D773
+        
+        ; MULTINB
+        LDA y0
+        STA $D774       ; MULTINB_LO
+        LDA y1
+        STA $D775       ; MULTINB_HI
+        CMP #$80        ; Set carry if negative.
+        LDA #$00
+        BCC +
+        LDA #$FF
++       ; Sign extend.
+        STA $D776
+        STA $D777
+
+        ; Result is immediately available.
+        LDA $D779       ; MULTOUT_LH
+        STA z1
+        LDA $D77A       ; MULTOUT_HL
+        STA z2
+        LDA $D77B       ; MULTOUT_HH
+        STA z3
+        BRA zxzy_done        
+.endif        
     
 zxzy_sw: 
         ; No need to setup zx [x0,x1] and zy [y0,y1]. They are already there.
@@ -3418,7 +3859,7 @@ nxt_point:
         LDA cx+1
         ADC incx+1
         STA cx+1
-        
+
         ; Point to next pixel and check end of rows.
         INC pixelx
         LDA pixelx
@@ -3474,6 +3915,8 @@ end_tile:
         JMP go_to_next_tile
 +       ; Render VDC tile (8x4).
         JSR render_tile_VDC
+.elif BUILD_MEGA65
+        JSR render_tile_MEGA65
 .elif BUILD_VIC20
         ; No need for histogram (4 fixed colors).
         JSR render_tile_multicolor
@@ -3639,10 +4082,11 @@ str_ptr     = var_words + 38   ; Current char of string to print.
 scr_ptr     = var_words + 40   ; Curren screen pointer of string print routine.
 bmp_ptr     = var_words + 42   ; Curren bitmap pointer (hi-res).
 sram_ptr    = var_words + 44   ; Screen RAM ptr.
-cram_ptr    = var_words + 46   ; Color RAM ptr.
-t_ax        = var_words + 48   ; Current tile ax (upper-left corner x).
-t_ay        = var_words + 50   ; Current tile ay (upper-left corner y).
-;tmp_ptr     = var_words + 52   ; Temp pointer.
+cram_ptr    = var_words + 46   ; Color RAM ptr (4 bytes to support Mega65).
+t_ax        = var_words + 50   ; Current tile ax (upper-left corner x).
+t_ay        = var_words + 52   ; Current tile ay (upper-left corner y).
+q_ptr       = var_words + 54   ; Generic quad ptr (Mega65).
+;next_var    = var_words + 58
   
   
  
@@ -3816,6 +4260,17 @@ b_end_of_row:
         INC vdc_attr_ptr+1
 +       RTS
 
+.elif BUILD_MEGA65
+
+        ; Point to next tile pixel (we just need to handle the lower 2 bytes).
+        LDA q_ptr
+        CLC
+        ADC #64
+        STA q_ptr
+        BCC +
+        INC q_ptr+1
++
+
 .elif BUILD_VIC20
         LDX tilex
         CPX num_tiles_w
@@ -3899,10 +4354,12 @@ b_end_of_row:
 ; Clobbered: A, X, Y
 check_userinput:
         ; Read joy inputs and translate to common format.
-.if BUILD_C64 || BUILD_C128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65
         ; C64/C128 joystick.
         LDA $DC00           ; Get CIA1:PRA. This is [xxxFRLDU].
         AND #$1F            ; Get only joy-2 actions.
+    ;JSR print_A_hex        ; DEBUG only
+    ;JMP check_userinput    ; DEBUG only
 
 .elif BUILD_TED
         ; TED joystick input.
@@ -4219,16 +4676,25 @@ yes_input:
         TAX               ; Save joy input to X.
         ; Only process input at "human" time intervals.
 .if BUILD_C64
+TIME_MASK = $F0
         LDA $DC05         ; Get Timer A high byte.
 .elif BUILD_C128
+TIME_MASK = $F0
         LDA $DC07         ; Get Timer B high byte.
+.elif BUILD_MEGA65
+TIME_MASK = $80
+        LDA $DC07         ; Get Timer A high byte.
 .elif BUILD_TED
+TIME_MASK = $F0
         LDA $FF03         ; Get TED Timer #1
 .elif BUILD_VIC20
+TIME_MASK = $F0
         LDA $9115         ; Get Timer #1
 .elif BUILD_PET
+TIME_MASK = $F0
         LDA $E845         ; Get Timer #1
 .elif BUILD_B128
+TIME_MASK = $F0
         LDA #$08          ; Get CIA2 TOD 10th of second ($DC08).
         STA $04
         LDA #$DC
@@ -4244,12 +4710,14 @@ yes_input:
         LDY #1
         STY $01
 .elif BUILD_ATARI
+TIME_MASK = $F0
         LDA frame_couter  ; Get 
 .elif BUILD_BEEB
+TIME_MASK = $F0
         LDA $FE45         ; Time 1 high byte.
 .endif
 
-        AND #$F0          ; Time mask.
+        AND #TIME_MASK    ; Time mask.
         CMP prev_timer    ; Compare to last-input masked time.
         BNE process_input
         RTS               ; Too soon.
@@ -4283,6 +4751,9 @@ chk_zoom_IN:
 .if BUILD_VIC20
     INCX_ZOOM_STEP = 8
     INCY_ZOOM_STEP = 4
+.elif BUILD_MEGA65
+    INCX_ZOOM_STEP = 8
+    INCY_ZOOM_STEP = 8
 .else
     INCX_ZOOM_STEP = 4
     INCY_ZOOM_STEP = 4
@@ -4559,6 +5030,7 @@ recenter:
         CLC
         LDA ax
         ADC pw_diff
+        AND #$F8
         STA ax
         LDA ax+1
         ADC pw_diff+1
@@ -4567,6 +5039,7 @@ recenter:
         SEC
         LDA ay
         SBC ph_diff
+        AND #$F8
         STA ay
         LDA ay+1
         SBC ph_diff+1
@@ -4658,7 +5131,13 @@ pA_alpha_1:
         STA SCR_RAM+1
     .if COL_RAM
         ; Set color.
+        .if BUILD_TED        
         LDA #$61   ; Light gray (use also high nibble for TED machines).
+        .elif BUILD_MEGA65
+        LDA #$08   ; Palette entry 8 (should be visible).
+        .else
+        LDA #$01   ; White.
+        .endif
         STA COL_RAM
         STA COL_RAM+1
     .endif
@@ -4838,6 +5317,9 @@ buf_iters_hr = $E800
 .elif BUILD_C128
 buf_iters_lr = $E000
 buf_iters_hr = $F000
+.elif BUILD_MEGA65
+buf_iters_lr = $F000
+buf_iters_hr = $F800
 .elif BUILD_TED
 buf_iters_lr = $E000
 buf_iters_hr = $E800
@@ -4856,6 +5338,9 @@ buf_iters_hr = $E800
 .elif BUILD_BEEB
 buf_iters_lr = $1000
 buf_iters_hr = $1800
+.elif BUILD_APPLE2
+buf_iters_lr = $5000
+buf_iters_hr = $5800
 .endif
 
 
@@ -4899,6 +5384,8 @@ z3  = $09            ;
     MULT_TAB_ADDR = $4700
 .elif BUILD_C128
     MULT_TAB_ADDR = $4700
+.elif BUILD_MEGA65
+    MULT_TAB_ADDR = $4700    
 .elif BUILD_TED
     MULT_TAB_ADDR = $4700
 .elif BUILD_VIC20
@@ -4911,6 +5398,8 @@ z3  = $09            ;
     MULT_TAB_ADDR = $4700
 .elif BUILD_BEEB
     MULT_TAB_ADDR = $2700
+.elif BUILD_APPLE2
+    MULT_TAB_ADDR = $4700    
 .endif
 
 ; First, check that code assembled didn't go past MULT_TAB_ADDR.
@@ -5116,5 +5605,156 @@ mulu_init:
     sta p_neg_sqr_hi+1
     rts
     
-END_ADDRESS:
-    
+END_ADDRESS:        ; THIS IS THE FINAL ADDRESS OF THE EXECUTABLE PROGRAM.
+
+; BEGIN: APPLE II+ -----------------
+.if BUILD_APPLE2
+                EXE_SIZE_BYTES  = (END_ADDRESS - LOAD_ADDRESS + 4) ; Executable file size in bytes.
+                EXE_SIZE_BLOCKS = (EXE_SIZE_BYTES+255)/256         ; Executable file size in blocks.
+
+        ; A standard Apple DOS 3.3 has a structure called a Volume Table of Contents (VTOC) stored at track $11, sector $0.
+        
+.fill $11000-END_ADDRESS    ;* = $11000 ; Track 11, sector 0.
+
+
+                ; Offset    | Description
+                ;-----------|----------------
+.fill $01,0     ;$00        | Not used
+.byte $11       ;$01        | Track number of first catalog sector
+.byte $01       ;$02        | Sector number of first catalog sector
+.byte $03       ;$03        | Release number of DOS used to INIT this disk
+.fill $02,0     ;$04-$05    | Not used
+.byte $FE       ;$06        | Diskette volume number (1-254)
+.fill $20,0     ;$07-$26    | Not used
+.byte $7A       ;$27        | Maximum number of track/sector pairs which will fit in one file track/sector list sector (122=$7A for 256 byte sectors)
+.fill $08,0     ;$28-$2F    | Not used
+.byte $12       ;$30        | Last track where sectors were allocated
+.byte $01       ;$31        | Direction of track allocation (+1 or -1)
+.fill $02,0     ;$32-$33    | Not used
+.byte $23       ;$34        | Number of tracks per diskette (normally 35)
+.byte $10       ;$35        | Number of sectors per track (13 or 16)  
+.byte $00,$01   ;$36-$37    | Number of bytes per sector (LO/HI format)
+.fill $C8,0     ;$38-$3B    | Bit map of free sectors in track 0
+                ;...        | 
+                ;$CO-$C3    | Bit map of free sectors in track 34
+                ;$C4-$FF    | Bit maps for additional tracks if there are more than 35 tracks per diskette
+        
+        ; Catalog (we put the catalog in the sector after VTOC).
+        ; The catalog consists of a 35 byte "File Descriptive Entry" for each file on the disk.
+        ; The catalog is a chain of sectors, the location of the first Catalog sector is found by looking in the VTOC.
+        ;* = $11100 ; Track 11, sector 1.
+
+                ; Offset    | Description
+                ;-----------|----------------
+.fill $01,0     ;$00        | Not Used.
+.byte $00       ;$01        | Track number of next catalog sector.
+.byte $00       ;$02        | Sector number of next catalog sector.
+.fill $08,0     ;$03-0A     | Not used.
+
+                ;$0B-2D     | First file descriptive entry (the "HELLO" BASIC program).
+                    ; File Descriptive Entry:
+                    ; Offset    | Description
+                    ;-----------|----------------
+.byte $11           ;$00    Track of first track/sector list sector.
+                    ;       If this is a deleted file this contains $FF and the original track number is copied to the last byte of the file name (BYTE 20)
+                    ;       If this byte contains a 00, the entry is assumed to never have been used and is available for use.
+                    ;       This means track 0 can never be used for data even if the DOS image is 'wiped' from the disk.
+.byte $02           ;$01    Sector of first track/sector list sector 
+.byte $02           ;$02    File type and flags:
+                    ;       $80+file type: FLAG - file is locked
+                    ;       $00 - TEXT file
+                    ;       $01 - INTEGER BASIC file
+                    ;       $02 - APPLESOFT BASIC file
+                    ;       $04 - BINARY file
+                    ;       $08 - S type file
+                    ;       $10 - RELOCATABLE object module file
+                    ;       $20 - a type file
+                    ;       $40 - b type file
+                    ;$03-20 File Name (30 characters).
+.byte $C8,$C5,$CC,$CC,$CF,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0 ; "HELLO"
+.word $0002         ;$21-22 Length of file in sectors (LO/HI format)
+
+                ;$2E-50     | Second file descriptive entry (the "MANDELBR8" executable program).
+                    ; File Descriptive Entry:
+                    ; Offset    | Description
+                    ;-----------|----------------
+.byte $11           ;$00    Track of first track/sector list sector.
+                    ;       If this is a deleted file this contains $FF and the original track number is copied to the last byte of the file name (BYTE 20)
+                    ;       If this byte contains a 00, the entry is assumed to never have been used and is available for use.
+                    ;       This means track 0 can never be used for data even if the DOS image is 'wiped' from the disk.
+.byte $04           ;$01    Sector of first track/sector list sector 
+.byte $04           ;$02    File type and flags:
+                    ;       $80+file type: FLAG - file is locked
+                    ;       $00 - TEXT file
+                    ;       $01 - INTEGER BASIC file
+                    ;       $02 - APPLESOFT BASIC file
+                    ;       $04 - BINARY file
+                    ;       $08 - S type file
+                    ;       $10 - RELOCATABLE object module file
+                    ;       $20 - a type file
+                    ;       $40 - b type file
+                    ;$03-20 File Name (30 characters).                
+.byte $CD,$C1,$CE,$C4,$C5,$CC,$C2,$D2,$B8,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0,$A0 ; "MANDELBR8"
+.word EXE_SIZE_BLOCKS ;$21-22 Length of file in sectors (LO/HI format)
+
+.fill $23,0     ;$51-73     | Third file descriptive entry
+
+.fill $23,0     ;$74-96     | Fourth file descriptive entry
+
+.fill $23,0     ;$97-B9     | Fifth file descriptive entry
+
+.fill $23,0     ;$BA-DC     | Sixth file descriptive entry
+
+.fill $23,0     ;$DD-FF     | Seventh file descriptive entry        
+
+                ;* = $11200 ; Track 11, sector 2.
+                ; Track Sector List Format (for the "HELLO" BASIC program).
+                ; Offset    | Description
+                ;-----------|----------------                
+.fill $01,0     ;$00        | Not used
+.byte $00       ;$01        | Track number of next T/S list if one is needed or zero if no more t/s list
+.byte $00       ;$02        | Sector number of next T/S list (if one is present)
+.fill $02,0     ;$03-04     | Not used
+.byte $00,$00   ;$05-06     | Sector offset in file of the first sector described by this list
+.fill $05,0     ;$07-0B     | Not used
+.byte $11,$03   ;$0C-0D     | Track and sector of first data sector or zeros
+.fill 121*2,0   ;$0E-FF     | Up to 121 more track and sector pairs
+                
+                ; The "HELLO" BASIC loader.
+                ;    10 PRINT CHR$(4);"BRUN MANDELBR8"
+                ;* = $11300 ; Track 11, sector 3.
+.byte $1F,$00,$1D,$08,$0A,$00,$BA,$E7,$28,$34,$29,$3B,$22,$42,$52,$55,$4E,$20,$20,$4D,$41,$4E,$44,$45,$4C,$42,$52,$38,$22,$00,$00,$00,$0A,$FF
+.fill 256-34, 0        
+
+                ;* = $11400 ; Track 11, sector 4.
+                ; Track Sector List Format (for the "MANDELBR8" executable program).
+                ; Offset    | Description
+                ;-----------|----------------                
+.fill $01,0     ;$00        | Not used
+.byte $00       ;$01        | Track number of next T/S list if one is needed or zero if no more t/s list
+.byte $00       ;$02        | Sector number of next T/S list (if one is present)
+.fill $02,0     ;$03-04     | Not used
+.byte $00,$00   ;$05-06     | Sector offset in file of the first sector described by this list
+.fill $05,0     ;$07-0B     | Not used
+                ;$0C-FF     | Up to 122 track and sector pairs, each pair takes two bytes.
+; File starts at track 1, sector 0. Each track has 16 sectors. 
+.for b := 0, b < EXE_SIZE_BLOCKS, b += 1
+.byte 1 + (b>>4)  ; Track.
+.byte b & $0F     ; Sector.
+.endfor
+.if b >= 122
+    .error "TS list block saturated."
+.endif
+; Pad to 256.
+.for , b < 122, b += 1
+.byte 0         ; Track.
+.byte 0         ; Sector.
+.endfor
+
+
+                ;* = $11500
+                ; Fill the rest of the DSK image with zeros for a total size of $23000 bytes.
+.fill $23000-$11500,0
+
+.endif
+; END: APPLE II+ -----------------
