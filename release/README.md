@@ -10,8 +10,8 @@ Pick the binary for your target machine:
 - **mandelbr8-pet**    : Commodore PET (8 KB RAM required)
 - **mandelbr8-atari**  : Atari XL/XE (64 KB RAM required)
 - **mandelbr8-beeb**   : BBC Micro B (32 KB RAM required)
-- **mandelbr8-m65**    : Mega65 (384 KB RAM required)
-- **mandelbr8-x16**    : Commander X16 (512 KB RAM required)
+- **mandelbr8-m65**    : Mega65
+- **mandelbr8-x16**    : Commander X16
 
 # LICENSE
 
