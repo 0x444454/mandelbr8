@@ -32,12 +32,16 @@
 ;   2025-12-01: Studying Mega65 machines and 45GS02 CPU. [DDT]
 ;   2025-12-02: Added initial support for MEGA65 [DDT]
 ;   2025-12-03: Completed support for MEGA65 [DDT]
+;   2025-12-07: Studying Commander X16 machine. [DDT]
+;   2025-12-08: Added initial support for Commander X16. [DDT]
+;   2025-12-09: Completed support for Commander X16 [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
 BUILD_C64    = 1 ; Commodore 64 (or C128 in C64 mode).
 BUILD_C128   = 0 ; Commodore 128.
 BUILD_MEGA65 = 0 ; Mega65 (384 KB required).
+BUILD_X16    = 0 ; Commander X16 (512 KB required).
 BUILD_TED    = 0 ; Commodore TED machines: Plus/4 and C16 with 64 KB.
 BUILD_VIC20  = 0 ; Commodore VIC-20 (16 KB required).
 BUILD_PET    = 0 ; Commodore PET (8 KB required).
@@ -47,7 +51,7 @@ BUILD_BEEB   = 0 ; BBC Micro B (32 KB required).
 BUILD_APPLE2 = 0 ; *** NOT IMPLEMENTED *** Apple II+ (16 KB required).
 
 
-CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUILD_B128 + BUILD_ATARI + BUILD_BEEB + BUILD_APPLE2
+CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_X16 + BUILD_TED + BUILD_VIC20 + BUILD_PET + BUILD_B128 + BUILD_ATARI + BUILD_BEEB + BUILD_APPLE2
 .if CHECK_BUILD < 1 || CHECK_BUILD > 1
     .error "ENABLE ONE AND ONLY ONE BUILD."
 .endif
@@ -59,6 +63,8 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_TED + BUILD_VIC20 + 
   * = $1C01   ; C128
 .elif BUILD_MEGA65
   * = $2001   ; Mega65
+.elif BUILD_X16
+  * = $0801   ; X16
 .elif BUILD_TED
   * = $1001   ; TED machines (C16 and Plus/4)
 .elif BUILD_VIC20
@@ -77,7 +83,7 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_TED + BUILD_VIC20 + 
 .endif
 
   
-.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_VIC20 | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_X16 | BUILD_TED | BUILD_VIC20 | BUILD_PET | BUILD_B128
   .word end_BASIC
   .word 10
 
@@ -104,6 +110,8 @@ CHECK_BUILD = BUILD_C64 + BUILD_C128 + BUILD_MEGA65 + BUILD_TED + BUILD_VIC20 + 
     .text "7181", $00 ; C128
   .elif BUILD_MEGA65
     .text "8209", $00 ; Mega65
+  .elif BUILD_X16
+    .text "2061", $00 ; X16    
   .elif BUILD_TED
     .text "4109", $00 ; TED
   .elif BUILD_VIC20
@@ -229,6 +237,18 @@ main:
         ; Get out of page 0 and page 1.
         JMP $0200
         * = $0200
+.elif BUILD_X16
+		; We need our custom IRQ handler.
+        SEI
+        LDA $314
+        STA x16_sysirq
+        LDA #<x16_irq
+        STA $314
+        LDA $315
+        STA x16_sysirq+1
+        LDA #>x16_irq
+        STA $315
+        CLI ; We need interrupts for ROM functions to work (needed to read joystick).
 .else
         ; Disable interrupts.
         SEI
@@ -444,7 +464,143 @@ done_BEEB:
         LDA #$70
         STA $D640
         NOP                ; This NOP is mandatory.
-       
+
+.elif BUILD_X16
+        .cpu "65c02"   ; Enable 65C02 CPU opcodes.
+
+        ; VERA defines.
+        
+        VERA_ADDRx_L      = $9F20
+        VERA_ADDRx_M      = $9F21
+        VERA_ADDRx_H      = $9F22
+        VERA_DATA0        = $9F23
+        VERA_DATA1        = $9F24
+        VERA_CTRL         = $9F25
+        VERA_IEN          = $9F26
+        VERA_ISR          = $9F27
+        VERA_IRQLINE_L    = $9F28 ; Write
+        VERA_SCANLINE_L   = $9F28 ; Read
+        
+        ; If DCSEL == 0
+        VERA_DC_VIDEO     = $9F29
+        VERA_DC_HSCALE    = $9F2A
+        VERA_DC_VSCALE    = $9F2B
+        VERA_DC_BORDER    = $9F2C
+        
+        ; If DCSEL == 1
+        VERA_DC_HSTART    = $9F29
+        VERA_DC_HSTOP     = $9F2A
+        VERA_DC_VSTART    = $9F2B
+        VERA_DC_VSTOP     = $9F2C
+        
+        ; If DCSEL == 2
+        VERA_FX_CTRL      = $9F29
+        VERA_FX_TILEBASE  = $9F2A
+        VERA_FX_MAPBASE   = $9F2B
+        VERA_FX_MULT      = $9F2C
+        
+        VERA_L0_CONFIG    = $9F2D
+        VERA_L0_MAPBASE   = $9F2E
+        VERA_L0_TILEBASE  = $9F2F
+        VERA_L0_HSCROLL_L = $9F30
+        VERA_L0_HSCROLL_H = $9F31
+        VERA_L0_VSCROLL_L = $9F32    
+        VERA_L0_VSCROLL_H = $9F33
+        VERA_L1_CONFIG    = $9F34
+        VERA_L1_MAPBASE   = $9F35
+        VERA_L1_TILEBASE  = $9F36
+        VERA_L1_HSCROLL_L = $9F37
+        VERA_L1_HSCROLL_H = $9F38
+        VERA_L1_VSCROLL_L = $9F39
+        VERA_L1_VSCROLL_H = $9F3A
+        
+        ; Initialize VERA.
+        LDA #(1<<1)
+        STA VERA_CTRL           ; DCSEL=1
+        LDA #200                ; DC_VSTOP uses 640x400 values even in 320x200 mode, but >> 1.
+        STA VERA_DC_VSTOP
+
+        LDA #(2<<1)
+        STA VERA_CTRL           ; DCSEL=2
+        LDA #%00010000
+        STA $9F2C               ; Enable multiplier.
+
+        LDA #$00
+        STA VERA_CTRL           ; DCSEL=0, ADDRSEL[16]=0
+        ;LDA #$41
+        ;STA VERA_IEN           ; Scan line=ON, VSYNC=ON
+        ; Enable layer 0, disable layer 1.
+        LDA VERA_DC_VIDEO
+        AND #%11001111
+        ORA #%00010000
+        STA VERA_DC_VIDEO       ; Scan line=ON, VSYNC=ON
+        LDA #64
+        STA VERA_DC_HSCALE
+        STA VERA_DC_VSCALE
+        ; Config layer 0 (Low-res, text).
+        LDA #%00011000          ; Map Height = 32, Map Width = 64; T265C=ON; Bitmap Mode=OFF, Color Depth=1bpp.
+        STA VERA_L0_CONFIG
+        LDA #$D8                ; For $1B000 in VERA address space.
+        STA VERA_L0_MAPBASE     ; Tile map base [16..9]. This is the font.
+        LDA #$F8                ; For $1F000 in VERA address space, Tile is 8x8.
+        STA VERA_L0_TILEBASE    ; Tile map base [16..11].
+        ; Config layer 1 (Hi-res 320x200, tiled).
+        LDA #%00010011          ; Map Height = 32, Map Width = 64; T256C=OFF; Bitmap Mode=OFF, Color Depth=8bpp.
+        STA VERA_L1_CONFIG
+        LDA #$D8                ; For $1B000 in VERA address space.poke
+        STA VERA_L1_MAPBASE     ; Tile map base [16..9]. This is the font.
+        LDA #$00                ; For $00000 in VERA address space, Tile is 8x8.
+        STA VERA_L1_TILEBASE    ; Tile map base [16..11].
+        
+        ; Load 256 colors palette.
+        ; Palette starts in VERA mem at $1FA00, each entry is two bytes:
+        ;   GGGGBBBB
+        ;   xxxxRRRR
+        STZ VERA_ADDRx_L
+        LDA #$FA
+        STA VERA_ADDRx_M
+        LDA #$11                ; Autoinc = 1
+        STA VERA_ADDRx_H
+        LDA #<palette_256_RGB
+        STA q_ptr
+        LDA #>palette_256_RGB
+        STA q_ptr+1
+        LDX #0
+-       LDY #2
+        ; Blue
+        LDA (q_ptr),Y
+        LSR
+        LSR
+        LSR
+        LSR
+        STA tmp_pal
+        ; Green
+        DEY
+        LDA (q_ptr),Y
+        AND #$F0
+        ORA tmp_pal
+        STA VERA_DATA0
+        ; Red
+        DEY
+        LDA (q_ptr),Y
+        LSR
+        LSR
+        LSR
+        LSR
+        STA VERA_DATA0
+        LDA q_ptr
+        CLC
+        ADC #3
+        STA q_ptr
+        BCC +
+        INC q_ptr+1
++       INX
+        BNE -
+
+tmp_pal:    .byte 0
+
+x16_pal_done:
+
 .elif BUILD_ATARI
         ; Disable IRQs.
         ;LDA #$00
@@ -601,8 +757,8 @@ done_expansion:
         LDA #>str_intro
         STA str_ptr+1
         JSR print_str
-.endif        
-      
+.endif
+
         ; Check machine.
 
 .if BUILD_C64 ; Kawari is only available on C64, at the moment.
@@ -745,7 +901,7 @@ no_VDC:
 no_C128:
        
         ; Common C64, C128, MEGA65 initialization.
-.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65       
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65
         ; Setup CIA1
         LDA #$FF
         STA $DC02 ; DDRA all R/W
@@ -890,13 +1046,12 @@ space_pressed:
         STA str_ptr+1
         JSR print_str
 .endif
-        
+    
         ; Only build squares table if we have at least 64 KB RAM.
 .if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_ATARI | BUILD_B128
         ; Initialize Q4.10 squares table.
         JSR init_squares_q4_10
 .endif
-
 
 
 .if BUILD_ATARI
@@ -936,7 +1091,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2025-12-03", $0D
+        .text "version 2025-12-09", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -1048,6 +1203,18 @@ atari_IRQ:
   HIRES_TILE_W = 8          ; NOTE: This is for VIC-IV hires
   HIRES_TILE_H = 8          ; NOTE: This is for VIC-IV hires
   BITMAP_START = $20000
+.elif BUILD_X16
+  SCR_RAM      = $1B000     ; In VERA address space.
+  COL_RAM      = 0          ; No Color RAM (because it's interleaved in Screen RAM).
+  COL_BORDER   = $9F2C
+  COL_BGND     = $9F2C
+  LORES_W      = 40
+  LORES_H      = 25         ; There are actually 30 lines, but only 1024 tiles, so we must stop at 25 :-(
+  HIRES_W      = 320
+  HIRES_H      = 200
+  HIRES_TILE_W = 8
+  HIRES_TILE_H = 8
+  BITMAP_START = $00000     ; In VERA address space.
 .elif BUILD_TED
   SCR_RAM      = $0C00      ; Video matrix
   COL_RAM      = $0800      ; Attributes matrix
@@ -1173,7 +1340,7 @@ kawari_palette_LPA:
     .byte  $0,  $8,  $c,  $f,  $f,  $f,  $f,  $f,  $6,  $4,  $b,  $f,  $e,  $f,  $f,  $f ; Amp   (4 bits).
 .endif
 
-.if BUILD_MEGA65
+.if BUILD_MEGA65 | BUILD_X16
 palette_256_RGB:
     .byte   0,   0,   0,      0,  29, 144,     61,  66, 144,     99,  87, 141,    130, 107, 135,    156, 124, 126,    179, 140, 115,    209, 162,  97
     .byte 230, 180,  89,    245, 192,  83,    249, 205, 110,    234, 216, 154,    223, 217, 199,    216, 216, 217,    212, 207, 218,    207, 193, 220
@@ -1207,7 +1374,9 @@ palette_256_RGB:
     .byte  43,  59, 141,     42,  59, 141,     42,  59, 141,     41,  59, 141,     40,  59, 141,     39,  60, 141,     39,  60, 140,     38,  60, 140
     .byte  37,  60, 140,     36,  60, 140,     35,  60, 140,     34,  60, 140,     34,  60, 139,     33,  60, 139,     32,  60, 139,     31,  61, 139
     .byte  30,  61, 139,     29,  61, 139,     28,  61, 139,     27,  61, 138,     26,  61, 138,     25,  61, 138,     24,  61, 138,     24,  61, 138; This is needed by the Mega65 to swap the two nibbles of a palette component.
+.endif
 
+.if BUILD_MEGA65
 swap_nibbles:
         TAZ
         AND #$0F        ; low nibble
@@ -1226,7 +1395,8 @@ swap_nibbles:
         RTS
 
 sn_tmp: .byte 0
-.endif
+.endif        
+
 
 ;------------- print routine (no Kernal was harmed in the making of this routine) -------------
 ; Print zero-terminated string pointed to by (str_ptr), max 255 chars.
@@ -1236,6 +1406,8 @@ print_str:
 .if BUILD_VIC20
         ; Unimplemented on VIC-20.
         RTS
+.elif BUILD_X16
+        JSR calc_scr_addr   ; Set VERA addr based on cursor pos.
 .endif
 
 pr_ch:
@@ -1253,7 +1425,7 @@ pr_no_EOS:
         INC cursor_y
         JSR calc_scr_addr
         JMP done_char
-pr_no_CR:       
+pr_no_CR:
         CMP #$93           ; <CLS>
         BNE pr_no_CLS
 
@@ -1270,7 +1442,7 @@ pr_no_CLS:
         ; ASCII char. Convert to screen code.
         CLC
         CMP #32
-.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_X16 | BUILD_TED | BUILD_PET | BUILD_B128
         BPL +
         ADC #128 ; Commodore
 .else
@@ -1284,7 +1456,7 @@ pr_no_CLS:
         CMP #97
         BPL +
         SEC
-.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128  
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_X16 | BUILD_TED | BUILD_PET | BUILD_B128  
         SBC #64
 .else
         SBC #32 ; ATARI
@@ -1292,7 +1464,7 @@ pr_no_CLS:
         JMP done_conv
 +       CMP #128
         BPL done_conv
-.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET | BUILD_B128
+.if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_X16 | BUILD_TED | BUILD_PET | BUILD_B128
         SEC
         SBC #32
 .endif        
@@ -1332,6 +1504,11 @@ set_char_VDC:
         ; Switch back to bank 1.
         LDA #1
         STA $01
+.elif BUILD_X16
+        ; On X16, calc_scr_addr has setup VERA addr to SCR_RAM and increment to 1.
+        STA VERA_DATA0      ; Screen code.
+        LDA #$01
+        STA VERA_DATA0      ; Color.
 .else
         ; Other machines.
         STA (scr_ptr),Y
@@ -1356,6 +1533,8 @@ calc_scr_addr:
         ; Default to 40 columns. Mul by 40.
 .if BUILD_PET | BUILD_B128
         LDA cbm_columns
+.elif BUILD_X16
+        LDA #128             ; VERA row modulo must use powers of 2: 64 map cells * 2 bytes each = 128.
 .else
         LDA #40
 .endif        
@@ -1382,6 +1561,16 @@ calc_scr_addr:
         ADC z1
         ADC #>SCR_RAM
         STA scr_ptr+1
+.if BUILD_X16
+        STZ VERA_CTRL       ; Select VERA ADDR0.
+        STA VERA_ADDRx_M
+        LDA #SCR_RAM/65536
+        ADC #$00            ; In case of future VERA with > 128 KB.
+        ORA #$10            ; Auto-inc by 1.
+        STA VERA_ADDRx_H
+        LDA scr_ptr
+        STA VERA_ADDRx_L
+.endif        
         RTS
 
 cursor_x:   .byte 0
@@ -1478,14 +1667,41 @@ nxt_page:
         LDX #$00
 .if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET
         LDA #$A0 ; Use reverse spaces.
+.elif BUILD_X16
+        STZ cursor_x
+        STZ cursor_y
+        JSR calc_scr_addr   ; Set VERA ADDR to start of map and inc to 1.
+        LDA #$A0 ; Use reverse spaces.
+        LDY #0   ; Color.
 .else
         LDA #$20 ; Use spaces.
 .endif
 
--       STA SCR_RAM,X
+-       
+.if BUILD_X16
+        ; VERA autoinc = 1.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+        STA VERA_DATA0      ; Char.
+        STY VERA_DATA0      ; Color.
+.else
+        STA SCR_RAM,X
         STA SCR_RAM+$100,X
         STA SCR_RAM+$200,X
         STA SCR_RAM+$300,X
+.endif        
 
 .if BUILD_PET
         LDY cbm_columns
@@ -1500,11 +1716,12 @@ nxt_page:
 
         INX
         BNE - ; Print till zero term or max 256 chars.
+      
         ; Clear attribs (and some more) to white.
         LDX #$00
 .if BUILD_C64 | BUILD_C128 | BUILD_TED       
         LDA #$71 ; Commodore: White (upper nibble is only used by TED for luma).
-.elif BUILD_MEGA65
+.elif BUILD_MEGA65 | BUILD_X16 
         LDA #$00 ; Palette entry 0 should be black.
 .else
         LDA #$00 ; Atari and others: Black.
@@ -1920,6 +2137,82 @@ COL_RAM_32 = $0FF80000
         RTS
  
 
+.elif BUILD_X16
+        
+        LDX res
+        BNE x16_hires
+
+        ; X16 lo-res.
+        ; Enable layer 0, disable layer 1.
+        LDA VERA_DC_VIDEO
+        AND #%11001111
+        ORA #%00010000
+        STA VERA_DC_VIDEO       ; Scan line=ON, VSYNC=ON
+        JMP x16_done
+
+x16_hires:   
+        ; X16 hi-res.
+        
+        ; Enable layer 1 (top), disable layer 0 (bottom).
+        LDA VERA_DC_VIDEO
+        AND #%11001111
+        ORA #%00100000
+        STA VERA_DC_VIDEO       ; Scan line=ON, VSYNC=ON
+        
+        ; Copy layer 0 (1bpp) to layer 1 (8bpp).
+    
+        ; Setup ADDR1
+        LDA #$01
+        STA VERA_CTRL           ; Select ADDR1 and point to hi-res tiles data (VERA internal addr $00000)
+        STZ VERA_ADDRx_L
+        STZ VERA_ADDRx_M
+        LDA #$10                
+        STA VERA_ADDRx_H        ; ADDR1 Inc = 1
+        ; Setup ADDR0
+        STZ cursor_x
+        STZ cursor_y
+        JSR calc_scr_addr       ; Select ADDR0, and point to text map. Autoinc = 1.
+        
+        ; Copy L0 to L1
+        STZ hr_tilenum
+        STZ hr_tilenum+1
+        LDA #LORES_H
+        STA cnt_h
+nxtlry: LDX #LORES_W
+nxtlrx: LDA hr_tilenum
+        STA VERA_DATA0          ; Set tile num (L).
+        LDA VERA_ADDRx_L        ; Save ADDR0_H before autoinc.
+        LDY VERA_DATA0          ; Get lo-res color.
+        STA VERA_ADDRx_L        ; Restore ADDR0_H before autoinc.
+        LDA hr_tilenum+1
+        STA VERA_DATA0          ; Set tile num (H), no flip, palette offset 0.
+        INC hr_tilenum
+        BNE +
+        INC hr_tilenum+1
++       TYA                     ; Get lo-res color.
+        LDY #64
+-       STA VERA_DATA1          ; Set lo-res color (8x8=64 times).
+        DEY
+        BNE -
+        DEX
+        BNE nxtlrx
+        ; Handle stride.
+        LDX #64-40
+-       STZ VERA_DATA0
+        STZ VERA_DATA0
+        DEX
+        BNE -
+        
+        DEC cnt_h
+        BNE nxtlry
+        
+x16_done:
+        LDA #$FF            ; Z = 0 (supported).
+        RTS
+
+hr_tilenum: .word 0
+cnt_h:      .byte 0         
+
 .elif BUILD_ATARI
         LDA #$14            ; High byte of display list address (default to lo-res).
         LDX res
@@ -2300,6 +2593,29 @@ render_tile_MEGA65:
         BNE -
 
         JSR bmp_to_next_tile
+        
+        RTS
+.endif
+
+
+.if BUILD_X16
+;------------- Render tile (X16 version) -------------
+render_tile_X16:
+        LDA #<buf_iters_hr
+        STA buf_it_ptr
+        LDA #>buf_iters_hr
+        STA buf_it_ptr+1
+
+        ; Tile ptr in VERA mem is in ADDR1.
+        LDY #0           ; Current tile pixel [0..63].
+-       LDA (buf_it_ptr),Y
+        STA VERA_DATA1
+        INY
+        CPY #64
+        BNE -
+
+        ; We already are at the next tile because of autoinc.
+        ;JSR bmp_to_next_tile
         
         RTS
 .endif
@@ -3367,6 +3683,13 @@ nxt_pass:
         CLC
         ROR incx
 +        
+.elif BUILD_X16
+        ; Lo-res: Point VERA addr to beginning of text mode map, inc=1.
+        STZ cursor_x
+        STZ cursor_y
+        PHA
+        JSR calc_scr_addr
+        PLA
 .endif        
         STA screenw
         STA tilew
@@ -3418,11 +3741,22 @@ hi_res:
         STZ q_ptr+1
         STX q_ptr+2
         STZ q_ptr+3
-.endif        
+.endif
+
+.if BUILD_X16
+        ; Hi-res: Use VERA ADDR1 ($00000) with autoinc=1.
+        LDA #$01
+        STA VERA_CTRL
+        STZ VERA_ADDRx_L
+        STZ VERA_ADDRx_M
+        LDA #$10        ; Autoinc=1.
+        STA VERA_ADDRx_H
+.endif 
+   
         ; Update incs for second-pass.
 .if BUILD_ATARI        
         LDX #1        ; Rotate once to divide lo-res incx by 2.
-.elif BUILD_MEGA65
+.elif BUILD_MEGA65 | BUILD_X16
         LDX #3        ; Rotate thrice to divide lo-res incx by 8.
 .else
         LDX #2        ; Rotate twice to divide lo-res incx by 4.
@@ -3579,7 +3913,7 @@ zx2_sw:
         LDA zx+1
         STA x1
         STA y1
-.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB
+.if BUILD_X16 | BUILD_VIC20 | BUILD_PET | BUILD_BEEB
         ; These have not enough mem for squares table.
         JSR multiply_Q5_11_signed ; [z1..z2] = zx*zx
 .else
@@ -3599,7 +3933,7 @@ zx2_done:
         LDA zy+1
         STA x1
         STA y1
-.if BUILD_VIC20 | BUILD_PET | BUILD_BEEB
+.if BUILD_X16 | BUILD_VIC20 | BUILD_PET | BUILD_BEEB
         ; These have not enough mem for squares table.
         JSR multiply_Q5_11_signed ; [z1..z2] = zy*zy
 .else        
@@ -3699,7 +4033,7 @@ zx2_done:
         LDA $D77B       ; MULTOUT_HH
         STA z3
         BRA zxzy_done        
-.endif        
+.endif     
     
 zxzy_sw: 
         ; No need to setup zx [x0,x1] and zy [y0,y1]. They are already there.
@@ -3753,8 +4087,14 @@ skip_buf_it:
         ; MODE_VIC
         LDA iter
         AND #$0F
-.if BUILD_TED
-        ORA #$60          ; Set luma to 6 (pastel colors) to conceal TED multicolor limitations.
+.if BUILD_X16
+        ; X16: VERA ADDR is ready to set char and color.
+        LDX #$A0        ; Char = reverse SPACE.
+        STX VERA_DATA0   ; Char.
+        STA VERA_DATA0   ; Color.
+        JMP nxt_point
+.elif BUILD_TED
+        ORA #$60         ; Set luma to 6 (pastel colors) to conceal TED multicolor limitations.
 .elif BUILD_PET | BUILD_B128
         AND #$0F
         TAX
@@ -3869,6 +4209,18 @@ nxt_point:
 
         ; Jump to next pixel row in tile.
 nxt_row:
+.if BUILD_X16
+        LDA mode
+        BEQ +
+        LDA #$00
+        STA VERA_CTRL
+        LDA VERA_ADDRx_L
+        ADC #128-81
+        STA VERA_ADDRx_L
+        BCC +
+        INC VERA_ADDRx_M
++        
+.endif
         ; cy = cy + incy
         SEC
         LDA cy
@@ -3917,6 +4269,8 @@ end_tile:
         JSR render_tile_VDC
 .elif BUILD_MEGA65
         JSR render_tile_MEGA65
+.elif BUILD_X16
+        JSR render_tile_X16        
 .elif BUILD_VIC20
         ; No need for histogram (4 fixed colors).
         JSR render_tile_multicolor
@@ -4040,7 +4394,11 @@ wait_ui:
         RTS ; EXIT
 
 ; Variables in page 0 for faster access.
+.if BUILD_X16
+var_bytes   = $22           ; X16: $0022-$007F range is available to the user.
+.else
 var_bytes   = $a0
+.endif
 iter        = var_bytes +  0
 max_iter    = var_bytes +  1
 num_tiles_w = var_bytes +  2  ; Number of tile on screen (horizontal).
@@ -4261,14 +4619,26 @@ b_end_of_row:
 +       RTS
 
 .elif BUILD_MEGA65
-
-        ; Point to next tile pixel (we just need to handle the lower 2 bytes).
+        ; We just need to handle the lower 2 bytes.
         LDA q_ptr
         CLC
         ADC #64
         STA q_ptr
         BCC +
         INC q_ptr+1
++
+
+.elif BUILD_X16
+        ; Point to next tile in VERA address space (using ADDR1).
+        ; We just need to handle the lower 2 bytes.
+        LDA #$01
+        STA VERA_CTRL       ; Select ADDR1
+        LDA VERA_ADDRx_L
+        CLC
+        ADC #64
+        STA VERA_ADDRx_L
+        BCC +
+        INC VERA_ADDRx_M
 +
 
 .elif BUILD_VIC20
@@ -4360,6 +4730,10 @@ check_userinput:
         AND #$1F            ; Get only joy-2 actions.
     ;JSR print_A_hex        ; DEBUG only
     ;JMP check_userinput    ; DEBUG only
+
+.elif BUILD_X16
+        ; X16 weird I/O system is complex, so we handle input in the VBlank routine using KERNAL.
+        LDA x16_joy
 
 .elif BUILD_TED
         ; TED joystick input.
@@ -4665,7 +5039,7 @@ done_keyb_BEEB:
         ; Unsupported platform. No input.
         LDA #$1F
 .endif
-        
+        AND #$1F
         CMP #$1F
         BNE yes_input
         ; No input.
@@ -4683,7 +5057,10 @@ TIME_MASK = $F0
         LDA $DC07         ; Get Timer B high byte.
 .elif BUILD_MEGA65
 TIME_MASK = $80
-        LDA $DC07         ; Get Timer A high byte.
+        LDA $DC07         ; Get Timer B high byte.
+.elif BUILD_X16
+TIME_MASK = $FC
+        LDA x16_frames    ; Use our own counter incremented in IRQ routine
 .elif BUILD_TED
 TIME_MASK = $F0
         LDA $FF03         ; Get TED Timer #1
@@ -4751,7 +5128,7 @@ chk_zoom_IN:
 .if BUILD_VIC20
     INCX_ZOOM_STEP = 8
     INCY_ZOOM_STEP = 4
-.elif BUILD_MEGA65
+.elif BUILD_MEGA65 | BUILD_X16
     INCX_ZOOM_STEP = 8
     INCY_ZOOM_STEP = 8
 .else
@@ -5120,10 +5497,26 @@ pA_alpha_1:
         STA $01
         PLA         ; Restore Y.
         TAY
+
+.elif BUILD_X16
+
+        LDA #<SCR_RAM
+        STA VERA_ADDRx_L
+        LDA #>SCR_RAM
+        STA VERA_ADDRx_M
+        LDA #SCR_RAM/65536
+        ORA #$10            ; Auto-inc by 1.
+        STA VERA_ADDRx_H
+        LDY #1              ; Color 1.
+        LDA nibble_char_h
+        STA VERA_DATA0
+        STY VERA_DATA0
+        LDA nibble_char_l
+        STA VERA_DATA0
+        STY VERA_DATA0
+
 .else        
-        ;LDA mode
-        ;AND #MODE_VIC | MODE_KAWARI
-        ;BEQ +
+
         ; Output.
         LDA nibble_char_h
         STA SCR_RAM
@@ -5180,17 +5573,83 @@ nibble_char_h: .byte 0
 nibble_char_l: .byte 0
 
 
+.if BUILD_X16
+;=============================================================
+; Commander X16 IRQ routine.
+x16_irq:
+        INC x16_frames
+    ;JMP (x16_sysirq)
+        ; X16 uses SNES joysticks.
+        PHA
+        PHX
+        PHY
+    ;LDA #$0F
+    ;STA x16_joy
+    ;JMP end_x16_irq
+        ; We use X16 KERNAL to to read the joystick, and translate to C64 format.
+        LDA #$1F            ; Default to no action (C64 format).
+        STA x16_joy
+
+        JSR $FF53           ; Call ROM joystick_scan.
+        LDA #0              ; Joy id [0..3].
+        JSR $FF56           ; Call ROM joystick_get.
+        ; Now we have (active low):
+        ;   A = Lower SNES bits[7..0] = A,B,Sel,Start,U,D,L,R (or NES = B,Y,Sel,Start,U,D,L,R).
+        ;   X = Upper SNES bits[7..0] = A,X,SL,SR,1,1,1,1
+        ;   Y = Joy is present: $00=YES, $FF=NO
+        ;
+        ; Convert to C64 format.
+        CPY #$00
+        BNE end_x16_irq     ; Joystick not present.
+
+        ; Joystick present.
+        CMP #$FF
+        BEQ end_x16_irq     ; No action.
+
+        ; Something pressed. Convert to C64 format.
+        ;JSR print_a_hex
+        STZ x16_joy
+        LSR                 ; A = 0bbbbUDL, C = R
+        ROL x16_joy         ; x16_joy = 0000000R
+        LSR                 ; A = 00bbbbUD, C = L
+        ROL x16_joy         ; x16_joy = 000000RL
+        LSR                 ; A = 000bbbbU, C = D
+        ROL x16_joy         ; x16_joy = 00000RLD
+        LSR                 ; A = 0000bbbb, C = U
+        ROL x16_joy         ; x16_joy = 0000RLDU
+        EOR #$0F            ; Convert fire buttons to active high.
+        BNE x16_fire        ; Any fire button pressed ?
+        LDA x16_joy
+        ORA #$10            ; Fire NOT pressed.
+        STA x16_joy
+x16_fire:
+        ; Now x16_joy = 000FRLDU (C64 format).
+
+end_x16_irq:
+        PLY
+        PLX
+        PLA
+        JMP (x16_sysirq)
+
+x16_sysirq:  .word $0000
+x16_joy:     .byte $1F       ; Joystick input in C64 format.
+x16_frames:  .byte $00
+.endif
+
+
 
 ;=============================================================
 ; Description: Signed Q4.10 fixed-point squares table.
 ; This is a 32KB table containing 16384 Q4.10 numbers (two bytes each).
 ; Only positive Q4.10 with even lowest bit are present.
-; Table starts at $5000 and ends at $cfff
+; Table starts at SQR_TAB (page boundary) and takes 32KB.
+
+SQR_TAB = $5000 ; Ends at $cfff
 
 init_squares_q4_10:
-        LDA #$00
+        LDA #<SQR_TAB
         STA squares     ; Use a page 0 address.
-        LDA #$50
+        LDA #>SQR_TAB
         STA squares+1
         LDY #$00        ; Used for indirect indexed.
         STY x0          ; Start from 0.
@@ -5256,7 +5715,7 @@ fetch_square:
         ; Fetch from table.
         CLC
         LDA squares+1
-        ADC #$50            ; Table offset
+        ADC #>SQR_TAB       ; Table offset
         STA squares+1
         LDY #$00
         LDA (squares),Y
@@ -5320,6 +5779,9 @@ buf_iters_hr = $F000
 .elif BUILD_MEGA65
 buf_iters_lr = $F000
 buf_iters_hr = $F800
+.elif BUILD_X16
+buf_iters_lr = $A000
+buf_iters_hr = $A800
 .elif BUILD_TED
 buf_iters_lr = $E000
 buf_iters_hr = $E800
@@ -5358,12 +5820,22 @@ buf_iters_hr = $5800
 ; 2210 bytes (including init routine)
 
 ; pointers to tables of squares
+.if BUILD_X16
+; On X16, we need the KERNAL to do stuff, so use a safe ZP range (reusing the BASIC range $D4-$FF is ok).
+p_sqr_lo1    = $d4   ; 2 bytes
+p_sqr_hi1    = $d6   ; 2 bytes
+p_neg_sqr_lo = $d8   ; 2 bytes
+p_neg_sqr_hi = $da   ; 2 bytes
+p_sqr_lo2    = $de   ; 2 bytes
+p_sqr_hi2    = $e0   ; 2 bytes
+.else
 p_sqr_lo1    = $8b   ; 2 bytes
 p_sqr_hi1    = $8d   ; 2 bytes
 p_neg_sqr_lo = $8f   ; 2 bytes
 p_neg_sqr_hi = $91   ; 2 bytes
 p_sqr_lo2    = $93   ; 2 bytes
 p_sqr_hi2    = $95   ; 2 bytes
+.endif
 
 ; the inputs and outputs
 x0  = p_sqr_lo1      ; multiplier, 2 bytes
@@ -5385,7 +5857,9 @@ z3  = $09            ;
 .elif BUILD_C128
     MULT_TAB_ADDR = $4700
 .elif BUILD_MEGA65
-    MULT_TAB_ADDR = $4700    
+    MULT_TAB_ADDR = $4700
+.elif BUILD_X16
+    MULT_TAB_ADDR = $1000   
 .elif BUILD_TED
     MULT_TAB_ADDR = $4700
 .elif BUILD_VIC20
@@ -5442,33 +5916,91 @@ negsqrhi:
 ;
 ; Clobbered: X, A, C
 multiply_16bit_signed:
+        ; TODO: Move all hw mult implementations here.
+.if BUILD_X16
+        ; Use VERA hardware mult.
+
+        ; Save VERA ADDR context.
+        LDA VERA_ADDRx_L
+        PHA
+        LDA VERA_ADDRx_M
+        PHA
+        LDA VERA_ADDRx_H
+        PHA
+        
+        LDA #(6<<1)
+        STA VERA_CTRL                   ; DCSEL=6
+        
+        LDA x0
+        STA $9F29       ; OP_1_LO
+        LDA x1
+        STA $9F2A       ; OP_1_HI
+        LDA y0
+        STA $9F2B       ; OP_2_LO
+        LDA y1
+        STA $9F2C       ; OP_2_HI
+        
+        LDA #(2<<1)
+        STA VERA_CTRL                   ; DCSEL=2
+        LDA #%01000000                  ; Cache Write Enable
+        STA VERA_FX_CTRL        
+        
+        STZ VERA_ADDRx_L                ; VRAM result address = $10000 (scratch)
+        STZ VERA_ADDRx_M
+        LDA #$11                        ; Autoinc = 1 for the write trigger (discarding MULTOUT_LL).
+        STA VERA_ADDRx_H
+        
+        STZ VERA_DATA0                  ; Trigger multiply (writes 4-byte result to VRAM), and skip MULTOUT_LL.
+        
+        STZ VERA_FX_CTRL                ; Cache Write Disable
+        
+        ; Result is immediately available.
+        ;LDA VERA_DATA0       ; MULTOUT_LL (discard)
+        LDA VERA_DATA0       ; MULTOUT_LH
+        STA z1
+        LDA VERA_DATA0       ; MULTOUT_HL
+        STA z2
+        LDA VERA_DATA0       ; MULTOUT_HH
+        STA z3
+
+        STZ VERA_CTRL           ; DCSEL=0
+
+        ; Restore VERA ADDR context.
+        PLA
+        STA VERA_ADDRx_H
+        PLA
+        STA VERA_ADDRx_M
+        PLA
+        STA VERA_ADDRx_L
+
+        RTS
+.endif
    
-    ; Step 1: unsigned multiply
-    jsr multiply_16bit_unsigned
-
-    ; Step 2: Apply sign (See C=Hacking16 for details).
-    bit x1
-    bpl x1_pos
-    sec
-;    lda z2
-    sbc y0
-    sta z2
-    lda z3
-    sbc y1
-    sta z3
+        ; Step 1: unsigned multiply
+        jsr multiply_16bit_unsigned
+    
+        ; Step 2: Apply sign (See C=Hacking16 for details).
+        bit x1
+        bpl x1_pos
+        sec
+        ;    lda z2
+        sbc y0
+        sta z2
+        lda z3
+        sbc y1
+        sta z3
 x1_pos:
-    bit y1
-    bpl y1_pos
-    sec
-    lda z2
-    sbc x0
-    sta z2
-    lda z3
-    sbc x1
-    sta z3
+        bit y1
+        bpl y1_pos
+        sec
+        lda z2
+        sbc x0
+        sta z2
+        lda z3
+        sbc x1
+        sta z3
 y1_pos:
-
-    rts
+        rts
 
 
 ; mult86.a
