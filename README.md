@@ -1,7 +1,7 @@
 # mandelbr8
 ## A fast Mandelbrot generator for 8 bit computers, 100% Assembly code.  
 
-![screenshots](media/mandel8-20251203.jpg)
+![screenshots](media/mandel8-20251209.jpg)
 
 Currently supported CPU types:
 ### 6502
@@ -14,6 +14,7 @@ Currently supported CPU types:
 - Atari XL/XE (64 KB).
 - BBC Micro B (32 KB).
 - Mega65 (384 KB).
+- Commander X16 (512 KB).
 
 [more soon]
 
@@ -35,6 +36,7 @@ The app is simply controlled using a joystick:
 - PET and CBM-II machines: WASD for directions and SHIFT for fire button.
 - Atari XL/XE: Joystick port 1.
 - BBC Micro: Analog joystick port 1 (untested), or cursor keys + shift.
+- Commander X16: Controller or keyboard.
 
 Actions:
 - Up, Down, Left, Right: Move around in complex plane.
@@ -87,6 +89,10 @@ Note: Tube accelerators not yet supported.
 - First pass: 40x25, 16 colors
 - Second pass: 320x200, up to 256 colors (FCM mode)
 
+### Commander X16
+- First pass: 40x25, 16 colors
+- Second pass: 320x200, up to 256 colors (8x8 tiles).
+
 
 # ALGORITHM
 
@@ -130,7 +136,7 @@ The number of tile pixels varies depending on the high-res video mode. In Commod
 
 ### Hi-res tile color clash optimization
 
-Most 8 bit machines have limitations on the number of colors that can be used in a 8x8 or 4x8 block.  
+Many 8 bit machines have limitations on the number of colors that can be used in a 8x8 or 4x8 block.  
 
 The VIC-II chip in the C64 and C128 only allows 4 colors for each 4x8 block in multicolor bitmap mode:
 - 1 common background color, shared by all blocks. We use black (Mandelbrot set color).
