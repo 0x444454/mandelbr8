@@ -19,14 +19,19 @@ Currently supported CPU types:
 [more soon]
 
 ### Z80
-[soon]
+[Soon. Check the [CVBasic](@mandelbr8###CVBasic) version using Z80 optimized code.]
 
 ### 6809/6309
-[soon]
+[Soon]
 
 ### TMS9900
 That's not a 8-bit CPU :-)
 Look here: https://github.com/0x444454/mandel99
+
+### CVBasic
+Ported by visrealm:  
+https://github.com/visrealm/mandelcvb
+
 
 # CONTROLS
 
