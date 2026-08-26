@@ -19,7 +19,7 @@ Currently supported CPU types:
 [more soon]
 
 ### Z80
-[Soon. Check the [CVBasic](@mandelbr8###CVBasic) version using Z80 optimized code.]
+[Soon. Check the [CVBasic](#mandelbr8###CVBasic) version using Z80 optimized code.]
 
 ### 6809/6309
 [Soon]
