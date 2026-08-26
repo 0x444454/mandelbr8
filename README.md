@@ -102,7 +102,7 @@ Note: Tube accelerators not yet supported.
 # ALGORITHM
 
 ### Mandelbrot calculation
-This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the Mandelbrot set).  
+This is a fast fixed-point implementation of the Mandelbrot algorithm (see Wikipedia about the [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set)).  
 Most 8-bit CPUs don't have integer multiplication instructions, let alone floating point ones, which makes classic implementations very slow and frustrating.  
 This algorithm makes the calculation much faster, albeit at the cost of a limited magnification (zoom-in) range. 
 The slow part of the calculation consists of two squares and one multiplication per iteration.  
