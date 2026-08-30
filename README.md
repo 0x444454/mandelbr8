@@ -5,7 +5,7 @@
 
 Currently supported CPU types:
 ### 6502
-- Commodore 64 (with or without Kawari acceleration).
+- Commodore 64 (VIC-II and Kawari modes).
 - Commodore 128 (VIC-IIe and VDC modes).
 - Commodore TED machines (Plus/4 and C16 with 64 KB).
 - Commodore VIC-20 (16+ KB).
@@ -56,9 +56,9 @@ Note: Zooming in over the precision limit can cause a solid color screen to be r
 
 ### C64, C128 40 column mode, TED machines
 - First pass: 40x25, 16 colors
-- Second pass: 160x200, 16 colors (multicolor bitmap)
-
-Note: Kawari 320x200 high resolution is not yet supported (work in progress).
+- Second pass:
+  - VIC-II: 160x200, 16 colors (multicolor bitmap)
+  - Kawari: 320x200, 16 colors (no color clashes)
 
 ### C128 80 column mode:
 - First pass: 80x50, 16 colors
@@ -146,7 +146,7 @@ Many 8 bit machines have limitations on the number of colors that can be used in
 The VIC-II chip in the C64 and C128 only allows 4 colors for each 4x8 block in multicolor bitmap mode:
 - 1 common background color, shared by all blocks. We use black (Mandelbrot set color).
 - 3 custom colors.
-- Each color is selected from a fixed palette of 16 colors. If the Kawari version of the VIC-II is found, we redefine the palette with a nice gradient.
+- Each color is selected from a fixed palette of 16 colors.
 
 The TED chip in the Plus/4 and C16 also allows only 4 colors for each 4x8 block in multicolor bitmap mode, but with further restrictions:
 - 2 common background colors, shared by all blocks. We use Black (Mandelbrot set color) and Light Gray.
@@ -158,7 +158,7 @@ Depending on the tile location in the complex plane, some color artifacts might 
 
 The C128 VDC chip has a limitation of 2 colors per 8x2 pixels in hi-res (640x200) mode. This program uses some simple heuristics to pick the two colors.
 
-Note: The C64 with Kawari supports 320x200 in 16 colors without color clashes, but this mode is not yet supported (WIP).
+Note: The C64 with Kawari supports 320x200 in 16 colors without color clashes.
 
 # LICENSE
 
