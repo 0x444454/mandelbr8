@@ -57,7 +57,7 @@ Note: Zooming in over the precision limit can cause a solid color screen to be r
 ### C64, C128 40 column mode, TED machines
 - First pass: 40x25, 16 colors
 - Second pass:
-  - VIC-II: 160x200, 16 colors (multicolor bitmap)
+  - VIC-II and TED: 160x200, 16 colors (multicolor bitmap)
   - Kawari: 320x200, 16 colors (no color clashes)
 
 ### C128 80 column mode:
