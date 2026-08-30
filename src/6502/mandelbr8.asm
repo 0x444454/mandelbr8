@@ -35,6 +35,7 @@
 ;   2025-12-07: Studying Commander X16 machine. [DDT]
 ;   2025-12-08: Added initial support for Commander X16. [DDT]
 ;   2025-12-09: Completed support for Commander X16 [DDT]
+;   2026-08-30: C64 build: Added support for Kawari hi-res 320x200 with 16 independent colors. [DDT]
 
 
 ; Enable *only* the build you need (set to 1).
@@ -782,12 +783,18 @@ done_expansion:
         LDA #>str_kawari
         STA str_ptr+1
         JSR print_str
+        ; Disable bad-lines.
+        LDA #%00000000          ; VIDEO_MODE1 = $50:
+                                ;   -----000 : CHAR_PIXEL_BASE = 0.
+                                ;   ----0--- : HIRES ALLOW BADLINES ON LOWRES MODE.
+                                ;   ---0---- : HIRES ENABLE = 0 (first pass is lo-res).
+                                ;   000----- : HIRES MODE (%010 = 320x200x16).
+        STA $D037               ; Set VIDEO_MODE1.
         ; Zero out IDX regs
         LDA #$00
         STA $D035            ; VIDEO_MEM_1_IDX
         STA $D036            ; VIDEO_MEM_2_IDX
         LDA #$21             ; Enable extra regs overlay, and auto-increment mem port 1 on write.
-                             ; NOTE: Auto-increment does not seem to work.
         STA $D03F            ; VIDEO_MEM_FLAGS
         LDA #$00
         STA $D03A            ; VIDEO_MEM_1_HI
@@ -1091,7 +1098,7 @@ str_intro:
         ;.text $0D, "..!? 012349 ABC abcdefghijklmnop" ; Used for testing.
         .text $0D
         .text "ddt's fixed-point mandelbrot", $0D
-        .text "version 2025-12-09", $0D
+        .text "version 2026-08-30", $0D
         ;.text "https://github.com/0x444454/mandelbr8", $0D
         .byte $00
 
@@ -1316,7 +1323,7 @@ vdc_has_64K:            .byte 0     ; Boolean: 0=false; non-0=true.
 vdc_hires_even_color:   .byte 0     ; Color of current hires even pixel.
 .endif
 
-.if BUILD_C64 | BUILD_MEGA65 ; Kawari is only available on C64, at the moment.
+.if BUILD_C64
 kawari_palette_RGB:
     .byte   0,   0,   0,  0
     .byte  10,   7,  40,  0
@@ -1342,41 +1349,42 @@ kawari_palette_LPA:
 
 .if BUILD_MEGA65 | BUILD_X16
 palette_256_RGB:
-    .byte   0,   0,   0,      0,  29, 144,     61,  66, 144,     99,  87, 141,    130, 107, 135,    156, 124, 126,    179, 140, 115,    209, 162,  97
-    .byte 230, 180,  89,    245, 192,  83,    249, 205, 110,    234, 216, 154,    223, 217, 199,    216, 216, 217,    212, 207, 218,    207, 193, 220
-    .byte 201, 174, 222,    198, 160, 221,    197, 158, 220,    197, 156, 220,    196, 154, 220,    196, 151, 220,    195, 149, 220,    195, 147, 219
-    .byte 194, 145, 219,    194, 142, 219,    193, 140, 219,    193, 138, 218,    192, 135, 218,    192, 133, 218,    191, 130, 218,    191, 128, 217
-    .byte 190, 125, 217,    190, 122, 217,    189, 120, 216,    189, 117, 216,    188, 114, 216,    187, 112, 215,    187, 109, 215,    186, 106, 215
-    .byte 186, 103, 214,    185, 100, 214,    185,  97, 214,    184,  93, 214,    183,  90, 213,    183,  87, 213,    182,  84, 212,    182,  80, 212
-    .byte 181,  77, 212,    180,  73, 211,    180,  70, 211,    179,  66, 211,    178,  62, 210,    178,  58, 210,    177,  54, 210,    176,  49, 209
-    .byte 176,  44, 209,    175,  40, 209,    174,  34, 208,    174,  28, 208,    173,  21, 207,    172,  13, 207,    171,   0, 206,    170,   0, 206
-    .byte 168,   0, 205,    167,   0, 204,    165,   0, 203,    164,   0, 202,    162,   0, 201,    160,   0, 200,    159,   0, 199,    157,   0, 198
-    .byte 155,   0, 197,    153,   0, 196,    151,   0, 194,    149,   0, 193,    147,   0, 192,    145,   0, 190,    142,   0, 189,    140,   0, 188
-    .byte 138,   0, 186,    135,   0, 185,    133,   0, 183,    131,   0, 182,    128,   0, 180,    125,   0, 178,    123,   0, 177,    121,   0, 176
-    .byte 121,   0, 176,    121,   0, 175,    120,   0, 175,    120,   0, 175,    119,   0, 175,    119,   0, 174,    118,   0, 174,    118,   0, 174
-    .byte 118,   0, 174,    117,   0, 173,    117,   0, 173,    116,   0, 173,    116,   0, 173,    116,   0, 172,    115,   0, 172,    115,   0, 172
-    .byte 114,   0, 172,    114,   0, 171,    113,   0, 171,    113,   0, 171,    112,   0, 171,    112,   0, 170,    112,   0, 170,    111,   0, 170
-    .byte 111,   0, 170,    110,   0, 169,    110,   0, 169,    109,   0, 169,    109,   0, 169,    108,   0, 168,    108,   0, 168,    108,   0, 168
-    .byte 107,   0, 168,    107,   0, 167,    106,   0, 167,    106,   0, 167,    105,   0, 167,    105,   0, 166,    104,   0, 166,    104,   1, 166
-    .byte 103,   3, 166,    103,   5, 165,    102,   6, 165,    102,   8, 165,    101,   9, 165,    101,  11, 164,    101,  13, 164,    100,  14, 164
-    .byte 100,  15, 164,     99,  16, 163,     99,  18, 163,     98,  19, 163,     98,  20, 162,     97,  21, 162,     97,  22, 162,     96,  23, 162
-    .byte  96,  23, 161,     95,  24, 161,     95,  25, 161,     94,  26, 161,     94,  27, 160,     93,  28, 160,     93,  28, 160,     92,  29, 160
-    .byte  92,  30, 159,     91,  30, 159,     91,  31, 159,     90,  32, 159,     90,  32, 158,     89,  33, 158,     89,  34, 158,     88,  34, 158
-    .byte  88,  35, 157,     87,  35, 157,     86,  36, 157,     86,  37, 157,     85,  37, 156,     85,  38, 156,     84,  38, 156,     84,  39, 156
-    .byte  83,  39, 155,     83,  40, 155,     82,  40, 155,     82,  41, 155,     81,  41, 155,     81,  42, 154,     80,  42, 154,     79,  43, 154
-    .byte  79,  43, 154,     78,  43, 153,     78,  44, 153,     77,  44, 153,     77,  45, 153,     76,  45, 152,     76,  45, 152,     75,  46, 152
-    .byte  74,  46, 152,     74,  47, 151,     73,  47, 151,     73,  47, 151,     72,  48, 151,     71,  48, 150,     71,  48, 150,     70,  49, 150
-    .byte  70,  49, 150,     69,  50, 150,     69,  50, 149,     68,  50, 149,     67,  50, 149,     67,  51, 149,     66,  51, 148,     65,  51, 148
-    .byte  65,  52, 148,     64,  52, 148,     64,  52, 148,     63,  53, 147,     62,  53, 147,     62,  53, 147,     61,  53, 147,     60,  54, 146
-    .byte  60,  54, 146,     59,  54, 146,     59,  54, 146,     58,  55, 146,     57,  55, 145,     57,  55, 145,     56,  55, 145,     55,  56, 145
-    .byte  55,  56, 145,     54,  56, 144,     53,  56, 144,     53,  57, 144,     52,  57, 144,     51,  57, 144,     50,  57, 143,     50,  57, 143
-    .byte  49,  57, 143,     48,  58, 143,     48,  58, 143,     47,  58, 142,     46,  58, 142,     45,  58, 142,     45,  59, 142,     44,  59, 142
-    .byte  43,  59, 141,     42,  59, 141,     42,  59, 141,     41,  59, 141,     40,  59, 141,     39,  60, 141,     39,  60, 140,     38,  60, 140
-    .byte  37,  60, 140,     36,  60, 140,     35,  60, 140,     34,  60, 140,     34,  60, 139,     33,  60, 139,     32,  60, 139,     31,  61, 139
-    .byte  30,  61, 139,     29,  61, 139,     28,  61, 139,     27,  61, 138,     26,  61, 138,     25,  61, 138,     24,  61, 138,     24,  61, 138; This is needed by the Mega65 to swap the two nibbles of a palette component.
+    .byte     0,   0,   0    ,   0,  17,  89    ,   0,  41, 141    ,  14,  57, 145    ,  38,  72, 143    ,  67,  89, 135    , 100, 108, 123    , 139, 130, 109
+    .byte   195, 162,  90    , 234, 186,  82    , 247, 209,  96    , 247, 217, 148    , 240, 217, 172    , 230, 217, 194    , 221, 217, 211    , 216, 214, 217
+    .byte   214, 206, 217    , 212, 195, 217    , 210, 182, 217    , 209, 168, 217    , 207, 152, 217    , 205, 135, 217    , 204, 118, 217    , 202, 101, 217
+    .byte   199,  81, 215    , 196,  64, 213    , 193,  48, 210    , 190,  34, 209    , 186,  23, 207    , 181,  15, 207    , 175,  10, 207    , 170,   9, 207
+    .byte   164,  11, 209    , 156,  15, 210    , 148,  21, 212    , 139,  29, 214    , 129,  38, 216    , 119,  49, 219    , 109,  61, 222    ,  98,  73, 224
+    .byte    87,  87, 227    ,  77, 100, 230    ,  69, 112, 232    ,  60, 125, 235    ,  53, 137, 237    ,  46, 149, 240    ,  39, 160, 242    ,  34, 171, 244
+    .byte    30, 181, 246    ,  27, 190, 248    ,  26, 197, 249    ,  26, 204, 251    ,  28, 211, 252    ,  34, 218, 253    ,  45, 224, 254    ,  58, 229, 255
+    .byte    74, 234, 255    ,  92, 238, 255    , 110, 241, 255    , 128, 243, 255    , 144, 245, 255    , 159, 247, 255    , 173, 248, 255    , 186, 249, 255
+    .byte   197, 250, 255    , 207, 251, 255    , 215, 251, 255    , 220, 252, 255    , 222, 252, 255    , 221, 252, 255    , 217, 252, 255    , 209, 252, 255
+    .byte   199, 252, 255    , 187, 251, 255    , 174, 250, 255    , 159, 248, 255    , 144, 247, 255    , 129, 245, 255    , 115, 243, 255    , 101, 241, 255
+    .byte    88, 239, 255    ,  76, 237, 255    ,  66, 234, 255    ,  58, 232, 251    ,  52, 230, 247    ,  48, 227, 241    ,  47, 225, 235    ,  48, 223, 228
+    .byte    51, 220, 220    ,  55, 217, 212    ,  59, 214, 202    ,  65, 211, 192    ,  72, 208, 181    ,  79, 204, 169    ,  87, 200, 157    ,  95, 197, 145
+    .byte   104, 193, 132    , 114, 189, 120    , 122, 186, 109    , 130, 184,  99    , 138, 181,  89    , 146, 178,  79    , 153, 176,  69    , 161, 174,  60
+    .byte   169, 171,  50    , 176, 169,  41    , 183, 168,  33    , 189, 166,  26    , 195, 165,  19    , 200, 164,  12    , 205, 164,   7    , 210, 164,   2
+    .byte   213, 164,   0    , 217, 165,   0    , 221, 167,   0    , 224, 169,   0    , 227, 172,   0    , 229, 176,   0    , 232, 180,   0    , 234, 184,   0
+    .byte   236, 189,   0    , 238, 194,   0    , 240, 199,   0    , 242, 204,   0    , 243, 209,   0    , 244, 213,   0    , 245, 217,   0    , 246, 221,   0
+    .byte   247, 224,   0    , 248, 228,   0    , 249, 231,   0    , 249, 233,   0    , 250, 234,   0    , 251, 234,   0    , 251, 234,   0    , 252, 234,   0
+    .byte   253, 234,   0    , 253, 234,   0    , 254, 234,   0    , 255, 234,   0    , 255, 230,   0    , 255, 223,   0    , 255, 215,   0    , 255, 205,   0
+    .byte   255, 194,   0    , 255, 181,   0    , 255, 168,   0    , 255, 154,   0    , 255, 139,   0    , 255, 125,   0    , 255, 113,   0    , 255, 102,   0
+    .byte   255,  91,   0    , 255,  81,   0    , 255,  71,   0    , 255,  62,   0    , 255,  52,   0    , 255,  44,   0    , 255,  35,   0    , 255,  28,   0
+    .byte   255,  20,   0    , 255,  14,   0    , 255,   8,   0    , 255,   4,   0    , 255,   0,   0    , 251,   0,   1    , 246,   0,   3    , 241,   0,   4
+    .byte   236,   0,   6    , 230,   0,   7    , 224,   0,   9    , 217,   0,  11    , 210,   0,  13    , 203,   0,  15    , 195,   0,  18    , 188,   0,  20
+    .byte   180,   0,  22    , 171,   0,  25    , 163,   0,  27    , 155,   0,  30    , 146,   0,  32    , 137,   0,  35    , 129,   0,  37    , 126,   0,  38
+    .byte   123,   0,  39    , 121,   0,  39    , 119,   0,  40    , 117,   0,  41    , 115,   0,  41    , 112,   1,  42    , 110,   1,  43    , 108,   1,  43
+    .byte   106,   2,  44    , 104,   2,  44    , 102,   3,  45    , 100,   3,  46    ,  97,   4,  46    ,  95,   4,  47    ,  93,   5,  48    ,  91,   5,  48
+    .byte    89,   6,  49    ,  87,   6,  50    ,  85,   6,  50    ,  83,   7,  51    ,  80,   7,  51    ,  78,   8,  52    ,  76,   8,  53    ,  74,   9,  53
+    .byte    72,   9,  54    ,  70,  10,  54    ,  68,  10,  55    ,  66,  11,  55    ,  64,  11,  56    ,  62,  11,  57    ,  60,  12,  57    ,  59,  12,  58
+    .byte    57,  13,  58    ,  55,  13,  59    ,  53,  14,  59    ,  51,  14,  60    ,  49,  15,  61    ,  47,  15,  61    ,  45,  15,  62    ,  44,  16,  62
+    .byte    42,  16,  63    ,  40,  17,  63    ,  39,  17,  64    ,  37,  17,  64    ,  35,  18,  65    ,  33,  18,  65    ,  32,  18,  66    ,  30,  19,  66
+    .byte    29,  19,  67    ,  27,  20,  67    ,  26,  20,  68    ,  24,  20,  68    ,  23,  20,  68    ,  21,  21,  69    ,  20,  21,  69    ,  18,  21,  70
+    .byte    17,  22,  70    ,  16,  22,  70    ,  14,  22,  71    ,  13,  22,  71    ,  12,  23,  72    ,  10,  23,  72    ,   9,  23,  72    ,   8,  23,  73
+    .byte     7,  23,  73    ,   6,  24,  73    ,   5,  24,  74    ,   4,  24,  74    ,   3,  24,  74    ,   2,  24,  74    ,   1,  24,  75    ,   0,  24,  75
 .endif
 
 .if BUILD_MEGA65
+; This is needed by the Mega65 to swap the two nibbles of a palette component.
 swap_nibbles:
         TAZ
         AND #$0F        ; low nibble
@@ -1662,8 +1670,12 @@ nxt_page:
 .endif
 
         LDA mode
+.if BUILD_C64
         AND #MODE_VIC | MODE_KAWARI
-        BEQ no_vic2_or_kawari
+.else
+        AND #MODE_VIC
+.endif
+        BEQ no_vic2ish
         LDX #$00
 .if BUILD_C64 | BUILD_C128 | BUILD_MEGA65 | BUILD_TED | BUILD_PET
         LDA #$A0 ; Use reverse spaces.
@@ -1736,7 +1748,7 @@ nxt_page:
         BNE - ; Print till zero term or max 256 chars.
 .endif        
         RTS
-no_vic2_or_kawari:  
+no_vic2ish:  
 
 .if BUILD_C128
         LDA mode
@@ -1751,6 +1763,7 @@ no_vic2_or_kawari:
 .endif
    
         RTS
+
     
 ;------------- Switch lo/hi res -------------
 ; Note: Not all platforms support switching.
@@ -1765,6 +1778,7 @@ switch_res:
         BNE +           ; Success.
         STX res         ; ERROR: Revert res.
 +       RTS
+
 
 ;------------- Apply mode -------------
 ; Configure machine based on current mode and resolution setting.
@@ -1796,8 +1810,12 @@ vdc_hires_unsupported:
     .endif
 
 chk_VIC2_res:
-        ;CMP #MODE_VIC
-        ;BNE chk_KAWARI_res ; Kawari hi-res not yet supported.
+        CMP #MODE_VIC
+.if BUILD_C64
+        BNE chk_KAWARI_res
+.else
+        BNE unsupported_c128_mode
+.endif
         ; VIC2
         LDA res
         BNE +
@@ -1825,12 +1843,31 @@ chk_VIC2_res:
         JSR clear_bitmap
         LDA #1          ; Return OK
         JMP end_applymode
+.if BUILD_C64
 chk_KAWARI_res:
         ; KAWARI_GFX
         LDA res
-        ;CMP #$01        ; Hi-res not yet supported on Kawari.
+        CMP #$01        ; Hi-res not yet supported on Kawari.
+        BNE +
+        ; Initialize Kawari 320x200 in 16 colors.
+        ; Expand each 40x25 low-res color into its corresponding 8x8 tile.
+        JSR kawari_copy_lores_colors
+        ; Switch to Kawari hires.
+        LDA #%01010000          ; VIDEO_MODE1 = $50:
+                                ;   -----000 : CHAR_PIXEL_BASE = 0.
+                                ;   ----0--- : HIRES ALLOW BADLINES ON LOWRES MODE.
+                                ;   ---1---- : HIRES ENABLE.
+                                ;   010----- : HIRES MODE (%010 = 320x200x16).
+        STA $D037               ; Set VIDEO_MODE1.
         JMP end_applymode
-+
++       ; Disable Kawari 320x200 16 colors bitmap.
+        LDA #$00                ; VIDEO_MODE1 = $00.
+        STA $D037
+.else
+unsupported_c128_mode:
+        LDA #$00                ; Return ERROR.
+        JMP end_applymode
+.endif
 .elif BUILD_TED
         LDA res
         BNE +
@@ -2575,6 +2612,63 @@ done_adjust:
 
 tmp_A: .byte 0
 tmp_X: .byte 0
+
+
+.if BUILD_C64
+render_tile_kawari:
+        ; VIDEO_MEM_FLAGS: set port 1 to auto-increment
+        LDA #$01
+        STA $D03F
+        ; Set VIDEO_MEM_1 to the current tile address.
+        LDA bmp_ptr
+        STA $D039       ; VIDEO_MEM_1_LO
+        LDA bmp_ptr+1
+        STA $D03A       ; VIDEO_MEM_1_HI
+        LDX #$00
+copy_tile_row:
+        LDY #$04
+copy_tile_pair:
+        ; Even pixel in upper nibble.
+        LDA buf_iters_hr,X
+        AND #$0F
+        ASL
+        ASL
+        ASL
+        ASL
+        STA pixel_pair
+        INX
+        ; Odd pixel in lower nibble.
+        LDA buf_iters_hr,X
+        AND #$0F
+        ORA pixel_pair
+        STA $D03B       ; VIDEO_MEM_1_VAL: Write packed pixels and autoinc VMEM ptr.
+        INX
+        DEY
+        BNE copy_tile_pair
+        CPX #64         ; All 64 pixels done ?
+        BEQ copy_tile_done
+        ; VIDEO_MEM_1_LO: Jump to next tile row.
+        LDA $D039
+        CLC
+        ADC #156
+        STA $D039
+        BCC copy_tile_row
+        INC $D03A
+        JMP copy_tile_row
+copy_tile_done:
+        ; Point bmp_ptr to the next tile in this row.
+        CLC
+        LDA bmp_ptr
+        ADC #$04
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++
+        RTS
+
+pixel_pair:
+.byte   $00
+.endif
 
 
 .if BUILD_MEGA65
@@ -3605,7 +3699,11 @@ Mandelbrot:
         STA incx_lr+1
         STA incy_lr+1    
         LDA mode
+.if BUILD_C64
         AND #MODE_VIC | MODE_KAWARI | MODE_BEEB
+.else
+        AND #MODE_VIC | MODE_BEEB
+.endif
         BEQ +
         LDA #192            ; Must be a multiple of 8 to keep lo-res and hi-res aligned.
         STA incx_lr
@@ -3663,7 +3761,11 @@ nxt_pass:
         STA screenh+1        
         ; Handle mode-dependent params.
         LDA mode
+.if BUILD_C64
         AND #MODE_VIC | MODE_KAWARI | MODE_BEEB ; Check for VIC2 and similar chips.
+.else
+        AND #MODE_VIC | MODE_BEEB ; Check for VIC2-like modes.
+.endif
         BNE +
         JMP no_VIC2ish_setup
       
@@ -3733,6 +3835,29 @@ hi_res:
         STA tileh
         LDA #HIRES_TILE_W*HIRES_TILE_H ; Pixels per tile.
         STA buf_tile_size
+
+.if BUILD_C64
+        LDA mode
+        CMP #MODE_KAWARI
+        BNE +
+        ; Kawari hires:
+        ;   bmp_ptr shadows the current Kawari VRAM tile address.
+        LDA #$00
+        STA bmp_ptr
+        STA bmp_ptr+1
+        ;   screenw = 320
+        ASL screenw
+        ROL screenw+1
+        ;   tilew = 8
+        ASL tilew
+        ;   buf_tile_size = 64
+        ASL buf_tile_size
+        ;   inx is halved.
+        LSR incx
++
+        ; No Kawari
+.endif        
+
 .if BUILD_MEGA65
         ; Init quad ptr to start of bitmap tiles ($20000).
         LDZ #$00
@@ -4253,7 +4378,17 @@ end_tile:
 +
     
         ; We have completed a hi-res tile, render it.
-.if BUILD_C64 | BUILD_TED
+.if BUILD_C64
+        LDA mode
+        CMP #MODE_KAWARI
+        BNE +
+        JSR render_tile_kawari
+        JMP go_to_next_tile
++       ; No Kawari.
+        JSR build_histogram
+        JSR scan_histogram
+        JSR render_tile_multicolor
+.elif BUILD_TED
         JSR build_histogram
         JSR scan_histogram
         JSR render_tile_multicolor
@@ -4289,8 +4424,15 @@ go_to_next_tile:
         LDA tilex
         CMP num_tiles_w
         BNE nxt_tile_in_row
+
         ; End of tile row, advance to next row.
-.if BUILD_C128
+.if BUILD_C64
+        LDA mode
+        CMP #MODE_KAWARI
+        BNE +
+        JSR bmp_to_next_tile    ; Advance Kawari pointer to the next tile row.
++        
+.elif BUILD_C128
         LDA mode
         CMP #MODE_VDC
         BNE +
@@ -4363,7 +4505,7 @@ nxt_tile_in_row:
         BNE find_next_t_ax
 .endif
 no_eotW_VDC:        
-        LDX #HIRES_TILE_W         ; Add HIRES_TILE_W*incx to t_ax.
+        LDX tilew               ; Add HIRES_TILE_W*incx to t_ax.
 find_next_t_ax:        
         CLC
         LDA t_ax
@@ -4562,11 +4704,48 @@ check_skippable:
         RTS
 
 
-;------------- Set bitmap pointer to next tile -------------
+;------------- Set hires bitmap pointer to next tile -------------
 ; Clobbered: A, X
 ;
 bmp_to_next_tile:
-.if BUILD_C64 | BUILD_TED
+.if BUILD_C64
+        LDA mode
+        CMP #MODE_KAWARI
+        BNE btnt_c64_vic
+        ; Kawari hires.
+        LDX tilex
+        CPX num_tiles_w
+        BEQ kawari_end_of_row
+        ; A skipped tile advances four packed-pixel bytes.
+        CLC
+        LDA bmp_ptr
+        ADC #$04
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       RTS
+kawari_end_of_row:
+        ; Skip the remaining seven 160-byte scanlines.
+        CLC
+        LDA bmp_ptr
+        ADC #<$0460
+        STA bmp_ptr
+        LDA bmp_ptr+1
+        ADC #>$0460
+        STA bmp_ptr+1
+        RTS
+btnt_c64_vic:
+        ; C64 VIC-II hires.
+        CLC
+        LDA bmp_ptr
+        ADC #8
+        STA bmp_ptr
+        BCC +
+        INC bmp_ptr+1
++       RTS
+
+.elif BUILD_TED
+        ; TED hires.
         CLC
         LDA bmp_ptr
         ADC #8
@@ -5097,6 +5276,7 @@ TIME_MASK = $F0
         AND #TIME_MASK    ; Time mask.
         CMP prev_timer    ; Compare to last-input masked time.
         BNE process_input
+        LDA #$01          ; Z clear: no recalculation
         RTS               ; Too soon.
 
 process_input:
@@ -5121,7 +5301,8 @@ directions_pressed:
         JMP no_fire
 
 fire:
-        ; Fire button pressed. Handle zoom.
+        ; Fire button pressed.
+        ; Handle zoom and iters-change.
         ; Note: We have almost no checks for precision underflow.
         ;       Let's call underflow a "user error" :-)
 chk_zoom_IN:
@@ -5250,16 +5431,7 @@ chk_iters_less:
         JSR print_A_hex
 
 end_zoomiters:
-        ; Set zero flag if image must be recalculated.
-        TXA
-        AND #$0F           
-        CMP #$0F            ; Check if a joystick direction was pressed.    
-        BEQ no_dir
-        LDA #$00
-        RTS
-no_dir:
-        LDA #$FF
-        RTS
+        JMP end_input
 
 no_fire: ;----- no fire button pressed
         ; Handle pan.
@@ -5311,6 +5483,13 @@ chk_pan_R:
     
 end_input:
         ;JSR print_A_hex
+        LDY #$10
+ei_delay:
+        LDX #$FF
+-       DEX
+        BNE -
+        DEY
+        BNE ei_delay
         ; Set zero flag to signal image must be recalculated.
         LDA #$00
         RTS
@@ -5528,8 +5707,16 @@ pA_alpha_1:
         LDA #$61   ; Light gray (use also high nibble for TED machines).
         .elif BUILD_MEGA65
         LDA #$08   ; Palette entry 8 (should be visible).
+        .elif BUILD_C64
+        ; For Kawari pick "most white" color from palette (color 10).
+        LDA mode
+        AND #MODE_KAWARI
+        BEQ +
+        LDA #9      ; Will be increased to 10.
++       CLC
+        ADC #1      ; Color 1 for normal VIC-II.
         .else
-        LDA #$01   ; White.
+        LDA #$01    ; White.
         .endif
         STA COL_RAM
         STA COL_RAM+1
@@ -6136,6 +6323,59 @@ mulu_init:
     lda #>negsqrhi
     sta p_neg_sqr_hi+1
     rts
+
+.if BUILD_C64
+; Expand the 40x25 Color RAM image into the linear 320x200 Kawari framebuffer.
+; Each color nibble becomes four identical packed bytes on eight scanlines.
+kawari_copy_lores_colors:
+        LDA #$01                ; Disable VMEM overlay and enable port-1 write autoinc.
+        STA $D03F               ; VIDEO_MEM_FLAGS.
+        LDA #$00
+        STA $D038               ; VIDEO_MODE2: framebuffer MATRIX_BASE = lower 32 KB.
+        STA $D039               ; VIDEO_MEM_1_LO: framebuffer start.
+        STA $D03A               ; VIDEO_MEM_1_HI.
+        LDA #<COL_RAM
+        STA cram_ptr
+        LDA #>COL_RAM
+        STA cram_ptr+1
+        LDA #LORES_H
+        STA tmp_X
+kawari_copy_color_row:
+        LDX #$08                ; Repeat each Color RAM row for eight scanlines.
+kawari_copy_scanline:
+        LDY #$00
+kawari_copy_color:
+        LDA (cram_ptr),Y
+        AND #$0F
+        STA tmp_A
+        ASL
+        ASL
+        ASL
+        ASL
+        ORA tmp_A               ; Dup color into both packed pixels.
+        STA $D03B
+        STA $D03B
+        STA $D03B
+        STA $D03B               ; 8 pixels == 4 packed bytes.
+        INY
+        CPY #LORES_W
+        BNE kawari_copy_color
+        DEX
+        BNE kawari_copy_scanline
+        CLC
+        LDA cram_ptr
+        ADC #LORES_W
+        STA cram_ptr
+        BCC +
+        INC cram_ptr+1
++       DEC tmp_X
+        BNE kawari_copy_color_row
+        RTS
+.endif
+
+.if * > SQR_TAB
+    .error "Assembled post-table code overrun over square tab."
+.endif
     
 END_ADDRESS:        ; THIS IS THE FINAL ADDRESS OF THE EXECUTABLE PROGRAM.
 
